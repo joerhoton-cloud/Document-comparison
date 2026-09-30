@@ -1,10 +1,11 @@
-import { afterAll, beforeAll, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 // Billing on, with fake Stripe credentials (no network calls are made in these tests).
 Object.assign(process.env, {
   STRIPE_SECRET_KEY: 'sk_test_fake',
   STRIPE_WEBHOOK_SECRET: 'whsec_fake',
-  STRIPE_PRICE_MONTHLY: 'price_seat_monthly',
+  STRIPE_PRICE_TEAM: 'price_team',
+  STRIPE_PRICE_UNLIMITED: 'price_unlimited',
 });
 
 const { createApp } = await import('../../server/app');
@@ -102,4 +103,43 @@ it('ignores failed invoices for subscriptions it does not know', async () => {
     data: { object: { currency: 'usd', amount_due: 100, parent: { subscription_details: { subscription: 'sub_unknown' } } } },
   } as never);
   expect(devOutbox.length).toBe(before);
+});
+
+describe('plan member limits', () => {
+  const invite = (email: string) =>
+    call('/api/auth/organization/invite-member', { method: 'POST', json: { email, role: 'member', organizationId: orgId } });
+
+  it('allows 5 members on Team, counting pending invitations', async () => {
+    // Pat (the owner) is member 1 on a trialing Team plan; four more invitations fill the plan.
+    for (let i = 1; i <= 4; i++) expect((await invite(`colleague${i}@acme.test`)).status).toBe(200);
+    const sixth = await invite('colleague5@acme.test');
+    expect(sixth.status).toBe(403);
+    const me = await (await call('/api/me')).json();
+    expect(me.workspace.memberLimit).toBe(5);
+  });
+
+  it('refuses to accept an invitation once the workspace is full', async () => {
+    // Four extra members join directly, so the workspace is at 5.
+    for (let i = 1; i <= 4; i++) {
+      await sql`INSERT INTO "user" (id, name, email, "emailVerified", "createdAt", "updatedAt") VALUES (${'u' + i}, ${'User ' + i}, ${'u' + i + '@acme.test'}, true, now(), now())`.execute(db);
+      await sql`INSERT INTO member (id, "organizationId", "userId", role, "createdAt") VALUES (${'m' + i}, ${orgId}, ${'u' + i}, 'member', now())`.execute(db);
+    }
+    await sql`UPDATE invitation SET status = 'canceled' WHERE "organizationId" = ${orgId}`.execute(db);
+    expect((await invite('late@acme.test')).status).toBe(403);
+  });
+
+  it('lifts the limit on Unlimited', async () => {
+    await sql`UPDATE subscription SET plan = 'unlimited' WHERE id = 'sub_trialing'`.execute(db);
+    expect((await invite('sixth@acme.test')).status).toBe(200);
+    const me = await (await call('/api/me')).json();
+    expect(me.workspace.memberLimit).toBeNull();
+  });
+
+  it('blocks switching to Team while the workspace has more than 5 members', async () => {
+    await sql`INSERT INTO "user" (id, name, email, "emailVerified", "createdAt", "updatedAt") VALUES ('u5', 'User 5', 'u5@acme.test', true, now(), now())`.execute(db);
+    await sql`INSERT INTO member (id, "organizationId", "userId", role, "createdAt") VALUES ('m5', ${orgId}, 'u5', 'member', now())`.execute(db);
+    const res = await call('/api/auth/subscription/upgrade', { method: 'POST', json: { plan: 'team', customerType: 'organization', referenceId: orgId } });
+    expect(res.status).toBe(409);
+    expect((await res.json()).message).toContain('Remove 1 member first');
+  });
 });

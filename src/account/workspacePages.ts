@@ -2,7 +2,7 @@ import qrcode from 'qrcode-generator';
 import { clear, formatBytes, h, icon } from '../ui/dom';
 import { field, notice } from './authScreens';
 import { call } from './http';
-import { isAdminRole, type ActivityItem, type Me, type SavedComparison } from './types';
+import { isAdminRole, PLAN_LABEL, planPayload, type ActivityItem, type Me, type SavedComparison } from './types';
 
 const when = (iso: string) => {
   const d = new Date(iso);
@@ -209,9 +209,22 @@ export async function renderTeam(root: HTMLElement, me: Me, refreshMe: () => Pro
     ),
   );
 
-  page.append(h('section', { class: 'panel' }, h('h2', null, `Members (${res.data.members.length})`), h('ul', { class: 'members' }, ...memberRows, ...inviteRows), msg));
+  const limit = ws.memberLimit;
+  const used = res.data.members.length + pending.length;
+  const full = limit != null && used >= limit;
+  const heading = limit != null ? `Members (${res.data.members.length} of ${limit}${pending.length ? `, ${pending.length} invited` : ''})` : `Members (${res.data.members.length})`;
+  page.append(h('section', { class: 'panel' }, h('h2', null, heading), h('ul', { class: 'members' }, ...memberRows, ...inviteRows), msg));
 
-  if (admin) {
+  if (admin && full) {
+    page.append(
+      h(
+        'section',
+        { class: 'panel limit-panel' },
+        h('p', null, h('strong', null, `Your ${planLabel(ws)} plan is full.`), ` It includes up to ${limit} members, counting pending invitations. Cancel an invitation or remove someone to free a spot, or switch to Unlimited for $100/month.`),
+        me.billingEnabled && switchPlanButton(ws, 'unlimited', 'Switch to Unlimited', msg),
+      ),
+    );
+  } else if (admin) {
     const email = h('input', { type: 'email', placeholder: 'colleague@company.com', required: true });
     const role = h('select', { 'aria-label': 'Role' }, h('option', { value: 'member' }, 'Member'), h('option', { value: 'admin' }, 'Admin'));
     const form = h('form', { class: 'invite-form' }, field('Invite by email', email), h('div', { class: 'field' }, h('label', null, 'Role'), role), h('button', { type: 'submit', class: 'btn primary' }, 'Send invite'));
@@ -219,7 +232,8 @@ export async function renderTeam(root: HTMLElement, me: Me, refreshMe: () => Pro
       e.preventDefault();
       if (!email.value.includes('@')) return notice(msg, 'Enter an email address.');
       const r = await call('/api/auth/organization/invite-member', { json: { email: email.value.trim(), role: role.value, organizationId: ws.id } });
-      if (!r.ok) return notice(msg, r.message);
+      if (!r.ok) return notice(msg, /limit/i.test(r.message) ? `Your plan's member limit is reached. Switch to Unlimited to add more people.` : r.message);
+      await refreshMe();
       renderTeam(root, me, refreshMe);
     });
     page.append(
@@ -227,7 +241,7 @@ export async function renderTeam(root: HTMLElement, me: Me, refreshMe: () => Pro
         'section',
         { class: 'panel' },
         form,
-        h('p', { class: 'hint' }, me.billingEnabled ? 'Each member is a paid seat. Stripe adjusts your subscription automatically when someone joins or is removed.' : 'Admins can invite people and manage billing. Members can compare, save and review.'),
+        h('p', { class: 'hint' }, me.billingEnabled && limit != null ? `${limit - used} of ${limit} spots left on the ${planLabel(ws)} plan. Admins can invite people and manage billing.` : 'Admins can invite people and manage billing. Members can compare, save and review.'),
       ),
     );
   }
@@ -241,12 +255,13 @@ function billingPanel(me: Me): HTMLElement {
   const msg = h('p', { class: 'notice', hidden: true, role: 'status' });
   const status = sub?.status ?? 'none';
   const lines: (string | false | null | undefined)[] = [
-    sub && `Plan: ${sub.plan === 'team-annual' ? 'Team (yearly)' : 'Team (monthly)'}`,
-    sub?.seats != null && `${sub.seats} seat${sub.seats === 1 ? '' : 's'}`,
+    sub && `${planLabel(ws)} plan`,
+    sub && (ws.memberLimit != null ? `up to ${ws.memberLimit} members` : 'unlimited members'),
     status === 'trialing' && sub?.trialEnd && `Free trial ends ${new Date(sub.trialEnd).toLocaleDateString()}`,
     status === 'active' && sub?.periodEnd && `${sub.cancelAtPeriodEnd ? 'Ends' : 'Renews'} ${new Date(sub.periodEnd).toLocaleDateString()}`,
     status === 'past_due' && 'The last payment failed. Update your card to avoid losing access.',
   ];
+  const other = sub?.plan === 'unlimited' ? 'team' : 'unlimited';
   return h(
     'section',
     { class: 'panel' },
@@ -254,6 +269,10 @@ function billingPanel(me: Me): HTMLElement {
     h('p', null, h('span', { class: `status-pill ${status}` }, status.replace('_', ' ')), ' ', lines.filter(Boolean).join(' · ')),
     isAdminRole(ws.role)
       ? h(
+          'div',
+          { class: 'form-row' },
+          sub && switchPlanButton(ws, other, other === 'unlimited' ? 'Switch to Unlimited ($100/month)' : 'Switch to Team ($49/month, up to 5 members)', msg),
+          h(
           'button',
           {
             class: 'btn',
@@ -265,10 +284,32 @@ function billingPanel(me: Me): HTMLElement {
               else notice(msg, r.message || 'Could not open the billing portal.');
             },
           },
-          'Manage billing, invoices and payment method',
+          'Invoices and payment method',
+          ),
         )
       : h('p', { class: 'hint' }, 'Only owners and admins can change billing.'),
     msg,
+  );
+}
+
+function planLabel(ws: NonNullable<Me['workspace']>): string {
+  return PLAN_LABEL[ws.subscription?.plan ?? 'team'] ?? 'Team';
+}
+
+/** Change plan. Stripe prorates the difference on the next invoice. */
+function switchPlanButton(ws: NonNullable<Me['workspace']>, plan: string, label: string, msg: HTMLElement) {
+  return h(
+    'button',
+    {
+      class: `btn ${plan === 'unlimited' ? 'primary' : ''}`,
+      onclick: async () => {
+        const r = await call<{ url?: string }>('/api/auth/subscription/upgrade', { json: planPayload(plan, ws.id) });
+        if (r.ok && r.data?.url) location.assign(r.data.url);
+        else if (r.ok) location.reload();
+        else notice(msg, r.message || 'Could not change the plan.');
+      },
+    },
+    label,
   );
 }
 

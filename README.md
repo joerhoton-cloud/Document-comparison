@@ -1,6 +1,6 @@
 # DocCompare: secure side-by-side document comparison
 
-A subscription web app for comparing two versions of a document, modeled on the "Compare Documents" feature in ABBYY FineReader PDF. Documents are read and compared **inside each user's browser**: they are never uploaded, stored or sent to a third party. Accounts, team workspaces, optional saved review progress and per-seat Stripe billing are handled by a small server that never sees document content.
+A subscription web app for comparing two versions of a document, modeled on the "Compare Documents" feature in ABBYY FineReader PDF. Documents are read and compared **inside each user's browser**: they are never uploaded, stored or sent to a third party. Accounts, team workspaces, optional saved review progress and Stripe subscriptions are handled by a small server that never sees document content.
 
 ![Side-by-side comparison](docs/screenshot.png)
 
@@ -24,7 +24,7 @@ A subscription web app for comparing two versions of a document, modeled on the 
 |---|---|
 | **Sign-in** | Email and password (12+ characters, email confirmation required), one-time email sign-in links, "Sign in with Microsoft" and "Sign in with Google", optional two-step verification (authenticator app, with backup codes), and password reset. |
 | **Workspaces** | Each customer is a workspace. Owners and admins invite colleagues by email and choose Member or Admin roles; people accept by following the emailed link. |
-| **Billing** | Stripe Checkout with a per-seat monthly (and optional yearly) plan and a free trial. The seat count follows the number of members automatically. Owners and admins manage cards and invoices in the Stripe billing portal. Workspaces without an active or trial subscription are locked. |
+| **Billing** | Two flat monthly plans through Stripe Checkout, each with a free trial: **Team** ($49/month, up to 5 members, counting pending invitations) and **Unlimited** ($100/month). Owners and admins switch plans on the Team page; switching to Team is refused while the workspace has more than 5 members. Cards and invoices are managed in the Stripe billing portal. Workspaces without an active or trial subscription are locked. |
 | **Optional saving** | Chosen before each comparison. **Don't save** records nothing. **Log activity** records who compared which files, when. **Save review progress** also stores review marks and notes. In every case only file names, sizes, SHA-256 fingerprints and counts are stored, never document text. |
 | **Review progress** | Mark each change ✓ Reviewed or ⚑ Flagged and add a note (keys `r` and `f`). Progress ("9/14 reviewed · 1 flagged") is shared with the team. |
 | **No duplicate work** | When two files are selected, their fingerprints are checked against the workspace history. If a teammate already compared them (in either order), a banner offers to continue their review. |
@@ -85,7 +85,7 @@ The server creates and updates its tables on start (additive changes only). Heal
 2. **Email.** Create a [Resend](https://resend.com) account, verify your sending domain, then set `RESEND_API_KEY` and `EMAIL_FROM`.
 3. **Stripe.**
    - Build and test in a **Stripe sandbox**, then repeat the setup in live mode.
-   - Run `STRIPE_SECRET_KEY=sk_test_… npm run stripe:setup -- --monthly 49 --annual 490` (your per-seat prices). It creates the "DocCompare Team" product and seat prices, configures the customer portal, and creates the webhook when `BASE_URL` is a public https URL. It prints the `STRIPE_PRICE_*` values to set, and is safe to re-run.
+   - Run `STRIPE_SECRET_KEY=sk_test_… npm run stripe:setup`. It creates the "DocCompare Team" ($49/month) and "DocCompare Unlimited" ($100/month) products and prices; override the amounts with `-- --team 49 --unlimited 100`. It also configures the customer portal and, when `BASE_URL` is a public https URL, the webhook. It prints the `STRIPE_PRICE_TEAM` / `STRIPE_PRICE_UNLIMITED` values to set, and is safe to re-run.
    - Create a **restricted key** with the permissions listed in `.env.example`, and store it in your host's secrets store as `STRIPE_SECRET_KEY`.
    - Add a webhook endpoint at `{BASE_URL}/api/auth/stripe/webhook` for `checkout.session.completed`, `customer.subscription.created/updated/deleted`, `invoice.paid` and `invoice.payment_failed`, and set `STRIPE_WEBHOOK_SECRET`. Webhooks are required: they are how the app learns about trials ending, renewals, failed cards and cancellations.
    - Turn on the customer portal (Settings → Billing → Customer portal): let customers update payment methods, view invoices and cancel.

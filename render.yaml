@@ -26,9 +26,9 @@ services:
         sync: false
       - key: STRIPE_WEBHOOK_SECRET
         sync: false
-      - key: STRIPE_PRICE_MONTHLY
+      - key: STRIPE_PRICE_TEAM
         sync: false
-      - key: STRIPE_PRICE_ANNUAL
+      - key: STRIPE_PRICE_UNLIMITED
         sync: false
       - key: MICROSOFT_CLIENT_ID
         sync: false

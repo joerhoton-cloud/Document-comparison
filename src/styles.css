@@ -1132,6 +1132,19 @@ del.active {
   margin-top: auto;
 }
 
+.plan.featured {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.plan-seats {
+  margin: 0;
+  font-weight: 600;
+}
+.limit-panel {
+  border-color: var(--mod-line);
+  background: var(--mod-bg);
+}
+
 /* pages: history, team, account */
 .page {
   max-width: 1200px;

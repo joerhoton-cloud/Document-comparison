@@ -11,8 +11,8 @@ const mockUp = await fetch(`${MOCK}/v1/products`, { headers: { Authorization: 'B
 Object.assign(process.env, {
   STRIPE_SECRET_KEY: 'sk_test_123',
   STRIPE_WEBHOOK_SECRET: 'whsec_test',
-  STRIPE_PRICE_MONTHLY: 'price_seat_monthly',
-  STRIPE_PRICE_ANNUAL: 'price_seat_yearly',
+  STRIPE_PRICE_TEAM: 'price_team',
+  STRIPE_PRICE_UNLIMITED: 'price_unlimited',
   STRIPE_API_BASE: MOCK,
 });
 
@@ -57,12 +57,11 @@ afterAll(async () => {
   await db.destroy();
 });
 
-it.skipIf(!mockUp)('creates a per-seat subscription Checkout Session that Stripe accepts', async () => {
+it.skipIf(!mockUp)('creates a Team plan Checkout Session that Stripe accepts', async () => {
   const res = await call('/api/auth/subscription/upgrade', {
     plan: 'team',
     customerType: 'organization',
     referenceId: orgId,
-    seats: 1,
     successUrl: `${BASE}/?billing=success`,
     cancelUrl: `${BASE}/?billing=cancelled`,
     disableRedirect: true,

@@ -1,8 +1,14 @@
 import { stripeClient } from './auth';
 import { env } from './env';
+import { PLANS, type PlanName } from './plans';
+
+const planInfo = (p: PlanName) => ({ label: PLANS[p].label, maxMembers: PLANS[p].maxMembers });
 
 export interface PublicPrice {
   plan: string;
+  label: string;
+  /** null = unlimited */
+  maxMembers: number | null;
   interval: string;
   /** Minor units (cents) per seat. */
   amount: number;
@@ -11,24 +17,23 @@ export interface PublicPrice {
 
 let cache: { at: number; prices: PublicPrice[] } | undefined;
 
-/** Seat prices shown on the plan screen, read from Stripe and cached for 10 minutes. */
+/** Plan prices shown on the plan screen, read from Stripe and cached for 10 minutes. */
 async function prices(): Promise<PublicPrice[]> {
   if (!env.stripe) return [];
   if (cache && Date.now() - cache.at < 10 * 60_000) return cache.prices;
   const stripe = stripeClient();
-  const ids: [string, string | undefined][] = [
-    ['team', env.stripe.monthlyPriceId],
-    ['team-annual', env.stripe.annualPriceId],
+  const ids: [PlanName, string][] = [
+    ['team', env.stripe.teamPriceId],
+    ['unlimited', env.stripe.unlimitedPriceId],
   ];
   const out: PublicPrice[] = [];
   for (const [plan, id] of ids) {
-    if (!id) continue;
     try {
       const p = await stripe.prices.retrieve(id);
-      out.push({ plan, interval: p.recurring?.interval ?? 'month', amount: p.unit_amount ?? 0, currency: p.currency });
+      out.push({ plan, ...planInfo(plan), interval: p.recurring?.interval ?? 'month', amount: p.unit_amount ?? 0, currency: p.currency });
     } catch {
       // Unknown price or Stripe unreachable: the plan screen shows the plan without an amount.
-      out.push({ plan, interval: plan === 'team-annual' ? 'year' : 'month', amount: 0, currency: 'usd' });
+      out.push({ plan, ...planInfo(plan), interval: 'month', amount: 0, currency: 'usd' });
     }
   }
   cache = { at: Date.now(), prices: out };

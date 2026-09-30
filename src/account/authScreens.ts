@@ -1,6 +1,6 @@
 import { clear, h, icon } from '../ui/dom';
 import { call } from './http';
-import { isAdminRole, type Me, type PublicConfig } from './types';
+import { isAdminRole, planPayload, type Me, type PublicConfig } from './types';
 
 /*
  * Screens shown before the comparison tool: sign in / sign up, two-factor code,
@@ -358,19 +358,14 @@ export function renderPlan(root: HTMLElement, me: Me, config: PublicConfig, onSi
     return;
   }
 
-  const plans = config.prices.length ? config.prices : [{ plan: 'team', interval: 'month', amount: 0, currency: 'usd' }];
+  const plans = config.prices.length
+    ? config.prices
+    : [
+        { plan: 'team', label: 'Team', maxMembers: 5, interval: 'month', amount: 0, currency: 'usd' },
+        { plan: 'unlimited', label: 'Unlimited', maxMembers: null, interval: 'month', amount: 0, currency: 'usd' },
+      ];
   const choose = async (plan: string) => {
-    const res = await call<{ url?: string }>('/api/auth/subscription/upgrade', {
-      json: {
-        plan,
-        customerType: 'organization',
-        referenceId: ws.id,
-        seats: ws.members,
-        successUrl: `${location.origin}/?billing=success`,
-        cancelUrl: `${location.origin}/?billing=cancelled`,
-        disableRedirect: true,
-      },
-    });
+    const res = await call<{ url?: string }>('/api/auth/subscription/upgrade', { json: planPayload(plan, ws.id) });
     if (res.ok && res.data?.url) location.assign(res.data.url);
     else notice(msg, res.message || 'Could not open checkout. Try again.');
   };
@@ -378,21 +373,23 @@ export function renderPlan(root: HTMLElement, me: Me, config: PublicConfig, onSi
   root.append(
     card(
       lapsed ? 'Renew your subscription' : 'Choose your plan',
-      `${ws.name} has ${ws.members} member${ws.members === 1 ? '' : 's'}. You pay per member, and seats adjust automatically when people join or leave.`,
+      `${ws.name} has ${ws.members} member${ws.members === 1 ? '' : 's'}. Both plans include every feature; they differ only in team size.`,
       h(
         'div',
         { class: 'plans' },
-        ...plans.map((p) =>
-          h(
+        ...plans.map((p) => {
+          const tooSmall = p.maxMembers != null && ws.members > p.maxMembers;
+          return h(
             'div',
-            { class: 'plan' },
-            h('h2', null, p.plan === 'team-annual' ? 'Team, billed yearly' : 'Team, billed monthly'),
+            { class: `plan${p.maxMembers == null ? ' featured' : ''}` },
+            h('h2', null, p.label),
             h(
               'p',
               { class: 'price' },
               p.amount ? money(p.amount, p.currency) : '',
-              h('span', null, p.amount ? ` per member / ${p.interval}` : `Billed per member each ${p.interval}`),
+              h('span', null, p.amount ? ` / ${p.interval}` : `Billed each ${p.interval}`),
             ),
+            h('p', { class: 'plan-seats' }, p.maxMembers == null ? 'Unlimited members' : `Up to ${p.maxMembers} members`),
             h(
               'ul',
               null,
@@ -402,14 +399,14 @@ export function renderPlan(root: HTMLElement, me: Me, config: PublicConfig, onSi
             ),
             h(
               'button',
-              { class: 'btn primary lg block', onclick: () => choose(p.plan) },
-              config.trialDays && !lapsed ? `Start ${config.trialDays}-day free trial` : 'Continue to payment',
+              { class: `btn ${p.maxMembers == null ? 'primary' : ''} lg block`, disabled: tooSmall, onclick: () => choose(p.plan) },
+              tooSmall ? `Needs ${p.maxMembers} or fewer members` : config.trialDays && !lapsed ? `Start ${config.trialDays}-day free trial` : 'Continue to payment',
             ),
-          ),
-        ),
+          );
+        }),
       ),
       msg,
-      h('p', { class: 'hint' }, 'Payments are handled by Stripe. You can cancel any time from the Team page.'),
+      h('p', { class: 'hint' }, 'Payments are handled by Stripe. You can switch plans or cancel any time from the Team page.'),
     ),
   );
 }

@@ -47,9 +47,9 @@ export const env = {
         /** Prefer a restricted key (rk_…) with only the permissions listed in .env.example. */
         secretKey: process.env.STRIPE_SECRET_KEY,
         webhookSecret: required('STRIPE_WEBHOOK_SECRET'),
-        /** Per-seat recurring prices. */
-        monthlyPriceId: required('STRIPE_PRICE_MONTHLY'),
-        annualPriceId: process.env.STRIPE_PRICE_ANNUAL,
+        /** Flat monthly prices: Team (up to 5 members) and Unlimited. */
+        teamPriceId: required('STRIPE_PRICE_TEAM'),
+        unlimitedPriceId: required('STRIPE_PRICE_UNLIMITED'),
         trialDays: Number(process.env.TRIAL_DAYS ?? 14),
         /**
          * Stripe Tax. Only turn on after adding a tax registration in the Dashboard:

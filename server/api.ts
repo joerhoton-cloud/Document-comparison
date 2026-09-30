@@ -4,6 +4,7 @@ import { sql } from 'kysely';
 import { z } from 'zod';
 import { ADMIN_ROLES, auth, BILLING_ENABLED } from './auth';
 import { db } from './db';
+import { isUnlimited, memberLimit } from './plans';
 
 /*
  * Workspace API. Everything here is scoped to the signed-in user's active workspace.
@@ -153,7 +154,8 @@ api.get('/me', async (c) => {
         .where('organizationId', '=', orgId)
         .executeTakeFirstOrThrow();
       const sub = await subscriptionFor(orgId);
-      workspace = { ...row, members: members.n, subscription: sub ?? null };
+      const limit = await memberLimit(orgId);
+      workspace = { ...row, members: members.n, memberLimit: isUnlimited(limit) ? null : limit, subscription: sub ?? null };
     }
   }
   return c.json({

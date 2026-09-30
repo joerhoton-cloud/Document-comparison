@@ -7,6 +7,7 @@ import { secureHeaders } from 'hono/secure-headers';
 import { api } from './api';
 import { auth } from './auth';
 import { publicConfig } from './config';
+import { planChangeBlocker } from './plans';
 import { env } from './env';
 
 /** Same policy as the static build: the page may only talk to this server. */
@@ -49,6 +50,20 @@ export function createApp(staticRoot = join(import.meta.dirname, '..', 'dist')) 
 
   // Small JSON bodies only: documents are never sent here.
   app.use('/api/*', bodyLimit({ maxSize: 64 * 1024 }));
+
+  // Switching to a plan with a lower member limit than the workspace currently has is refused.
+  app.post('/api/auth/subscription/upgrade', async (c, next) => {
+    const body = (await c.req.raw
+      .clone()
+      .json()
+      .catch(() => null)) as { referenceId?: unknown; plan?: unknown } | null;
+    if (body?.referenceId && typeof body.plan === 'string') {
+      const reason = await planChangeBlocker(String(body.referenceId), body.plan);
+      if (reason) return c.json({ error: 'too_many_members', message: reason }, 409);
+    }
+    await next();
+    return undefined;
+  });
 
   // Better Auth handles its own CSRF/origin checks; Stripe webhooks arrive from Stripe.
   app.on(['GET', 'POST'], '/api/auth/*', (c) => auth.handler(c.req.raw));

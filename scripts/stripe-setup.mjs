@@ -1,12 +1,12 @@
 #!/usr/bin/env node
-// Creates (or updates) everything DocCompare needs in a Stripe account:
-// the "DocCompare Team" product, per-seat monthly/yearly prices, the customer
-// portal configuration and, for a public BASE_URL, the webhook endpoint.
+// Creates (or updates) everything DocCompare needs in a Stripe account: one
+// product per plan (Team: up to 5 members, Unlimited) with a flat monthly price,
+// the customer portal configuration and, for a public BASE_URL, the webhook endpoint.
 // Safe to re-run: existing objects are found by lookup key / metadata and reused.
 //
 // Usage (use a sandbox key first):
-//   STRIPE_SECRET_KEY=sk_test_... node scripts/stripe-setup.mjs --monthly 49 --annual 490 [--currency usd]
-//   BASE_URL=https://compare.example.com STRIPE_SECRET_KEY=... node scripts/stripe-setup.mjs --monthly 49
+//   STRIPE_SECRET_KEY=sk_test_... node scripts/stripe-setup.mjs [--team 49] [--unlimited 100] [--currency usd]
+//   BASE_URL=https://compare.example.com STRIPE_SECRET_KEY=... node scripts/stripe-setup.mjs
 import Stripe from 'stripe';
 
 const args = Object.fromEntries(
@@ -15,10 +15,10 @@ const args = Object.fromEntries(
 const key = process.env.STRIPE_SECRET_KEY;
 if (!key) exit('Set STRIPE_SECRET_KEY (a sandbox key while testing).');
 if (/^[sr]k_live_/.test(key) && args.live !== 'yes') exit('Refusing to run against live mode without --live yes.');
-const monthly = Number(args.monthly);
-const annual = args.annual ? Number(args.annual) : undefined;
+const teamAmount = Number(args.team ?? 49);
+const unlimitedAmount = Number(args.unlimited ?? 100);
 const currency = (args.currency ?? 'usd').toLowerCase();
-if (!(monthly > 0)) exit('Pass the monthly price per seat, e.g. --monthly 49 (and optionally --annual 490).');
+if (!(teamAmount > 0 && unlimitedAmount > 0)) exit('Prices must be positive, e.g. --team 49 --unlimited 100.');
 
 // STRIPE_API_BASE lets tests point at stripe-mock (e.g. http://localhost:12111).
 const apiBase = process.env.STRIPE_API_BASE ? new URL(process.env.STRIPE_API_BASE) : undefined;
@@ -33,44 +33,46 @@ const WEBHOOK_EVENTS = [
   'invoice.payment_failed',
 ];
 
-// ---- product (one product; monthly and yearly are billing variants of the same plan)
-let product = (await stripe.products.search({ query: `metadata['app']:'${APP}' AND active:'true'` })).data[0];
-if (!product) {
-  product = await stripe.products.create({
-    name: 'DocCompare Team',
-    description: 'Private side-by-side document comparison with shared team review. Billed per member.',
-    metadata: { app: APP },
-    unit_label: 'seat',
-  });
-  log(`Created product ${product.id}`);
-} else log(`Using product ${product.id}`);
+// ---- one product per plan (so invoices and Checkout show the plan name), each with a flat monthly price
+async function planProduct(plan, name, description) {
+  let product = (await stripe.products.search({ query: `metadata['app']:'${APP}' AND metadata['plan']:'${plan}' AND active:'true'` })).data[0];
+  if (!product) {
+    product = await stripe.products.create({ name, description, metadata: { app: APP, plan } });
+    log(`Created product ${product.id} (${name})`);
+  } else log(`Using product ${product.id} (${name})`);
+  return product;
+}
 
-// ---- prices, found by lookup key; a changed amount creates a new price and moves the key to it
-async function seatPrice(lookupKey, amount, interval) {
+// Prices are found by lookup key; a changed amount creates a new price and moves the key to it.
+async function monthlyPrice(product, lookupKey, amount) {
   const unit = Math.round(amount * 100);
-  const existing = (await stripe.prices.list({ lookup_keys: [lookupKey], expand: ['data.product'] })).data[0];
-  if (existing && existing.unit_amount === unit && existing.currency === currency && existing.recurring?.interval === interval) {
-    log(`Using ${interval}ly price ${existing.id} (${fmt(unit)}/seat)`);
+  const existing = (await stripe.prices.list({ lookup_keys: [lookupKey] })).data[0];
+  if (existing && existing.unit_amount === unit && existing.currency === currency && existing.recurring?.interval === 'month' && existing.product === product.id) {
+    log(`Using price ${existing.id} (${fmt(unit)}/month)`);
     return existing;
   }
   const price = await stripe.prices.create({
     product: product.id,
     currency,
     unit_amount: unit,
-    recurring: { interval, usage_type: 'licensed' },
+    recurring: { interval: 'month', usage_type: 'licensed' },
     lookup_key: lookupKey,
     transfer_lookup_key: true,
     tax_behavior: 'exclusive',
-    nickname: `Team seat, ${interval}ly`,
+    nickname: `${product.name}, monthly`,
   });
-  log(`Created ${interval}ly price ${price.id} (${fmt(unit)}/seat)`);
+  log(`Created price ${price.id} (${fmt(unit)}/month)`);
+  if (!product.default_price || product.default_price !== price.id) await stripe.products.update(product.id, { default_price: price.id });
   return price;
 }
-const monthlyPrice = await seatPrice(`${APP}_team_seat_monthly`, monthly, 'month');
-const annualPrice = annual ? await seatPrice(`${APP}_team_seat_yearly`, annual, 'year') : undefined;
-if (!product.default_price) await stripe.products.update(product.id, { default_price: monthlyPrice.id });
 
-// ---- customer portal: update card, see invoices, update billing details, cancel at period end
+const teamProduct = await planProduct('team', 'DocCompare Team', 'Private document comparison with shared team review, for up to 5 members.');
+const teamPrice = await monthlyPrice(teamProduct, `${APP}_team_monthly`, teamAmount);
+const unlimitedProduct = await planProduct('unlimited', 'DocCompare Unlimited', 'Private document comparison with shared team review, for unlimited members.');
+const unlimitedPrice = await monthlyPrice(unlimitedProduct, `${APP}_unlimited_monthly`, unlimitedAmount);
+
+// ---- customer portal: update card, see invoices, update billing details, cancel at period end.
+// Plan switching stays in the app, which checks member counts before allowing a downgrade.
 const portalFeatures = {
   payment_method_update: { enabled: true },
   invoice_history: { enabled: true },
@@ -109,8 +111,8 @@ if (base?.startsWith('https://')) {
 }
 
 console.log('\nAdd these to your environment (secrets store in production):\n');
-console.log(`STRIPE_PRICE_MONTHLY=${monthlyPrice.id}`);
-if (annualPrice) console.log(`STRIPE_PRICE_ANNUAL=${annualPrice.id}`);
+console.log(`STRIPE_PRICE_TEAM=${teamPrice.id}`);
+console.log(`STRIPE_PRICE_UNLIMITED=${unlimitedPrice.id}`);
 if (webhookSecret) console.log(`STRIPE_WEBHOOK_SECRET=${webhookSecret}   # shown once; store it now`);
 
 function fmt(cents) {

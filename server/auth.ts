@@ -3,6 +3,7 @@ import { betterAuth, type BetterAuthOptions } from 'better-auth';
 import { magicLink, organization, twoFactor } from 'better-auth/plugins';
 import Stripe from 'stripe';
 import { onStripeEvent } from './billingEvents';
+import { invitationLimit, memberLimit, PLANS } from './plans';
 import { db, pool } from './db';
 import { env } from './env';
 import { sendEmail } from './mailer';
@@ -31,6 +32,8 @@ async function isWorkspaceAdmin(userId: string, organizationId: string): Promise
   return !!m && m.role.split(',').some((r) => ADMIN_ROLES.has(r.trim()));
 }
 
+const trial = env.stripe && env.stripe.trialDays > 0 ? { days: env.stripe.trialDays } : undefined;
+
 const plugins = [
   organization({
     // One workspace per customer; people join others by invitation.
@@ -38,6 +41,9 @@ const plugins = [
     organizationLimit: 1,
     invitationExpiresIn: 7 * 24 * 60 * 60,
     requireEmailVerificationOnInvitation: true,
+    // Plan limits: Team allows 5 members (members + pending invitations), Unlimited has none.
+    membershipLimit: (_user, org) => memberLimit(org.id),
+    invitationLimit: ({ organization: org }) => invitationLimit(org.id),
     async sendInvitationEmail({ email, organization: org, inviter, id }) {
       await sendEmail({
         to: email,
@@ -72,23 +78,11 @@ const plugins = [
             enabled: true,
             requireEmailVerification: true,
             // Per-seat plans: the Stripe quantity follows the workspace's member count.
+            // Flat monthly plans, one Stripe Product each. Member limits are enforced by the
+            // organization plugin (membershipLimit / invitationLimit below).
             plans: [
-              {
-                name: 'team',
-                priceId: env.stripe.monthlyPriceId,
-                seatPriceId: env.stripe.monthlyPriceId,
-                freeTrial: env.stripe.trialDays > 0 ? { days: env.stripe.trialDays } : undefined,
-              },
-              ...(env.stripe.annualPriceId
-                ? [
-                    {
-                      name: 'team-annual',
-                      priceId: env.stripe.annualPriceId,
-                      seatPriceId: env.stripe.annualPriceId,
-                      freeTrial: env.stripe.trialDays > 0 ? { days: env.stripe.trialDays } : undefined,
-                    },
-                  ]
-                : []),
+              { name: 'team', priceId: env.stripe.teamPriceId, limits: { members: PLANS.team.maxMembers }, freeTrial: trial },
+              { name: 'unlimited', priceId: env.stripe.unlimitedPriceId, limits: { members: null }, freeTrial: trial },
             ],
             // Only workspace owners/admins can start, change or cancel the subscription.
             authorizeReference: async ({ user, referenceId }) => isWorkspaceAdmin(user.id, referenceId),
@@ -96,7 +90,7 @@ const plugins = [
             // Payment methods are deliberately not listed, so the Dashboard settings decide.
             getCheckoutSessionParams: () => ({
               params: {
-                integration_identifier: 'doccompare_team_seats_kqvhmwrt',
+                integration_identifier: 'doccompare_team_plans_kqvhmwrt',
                 billing_address_collection: 'required',
                 tax_id_collection: { enabled: true },
                 customer_update: { address: 'auto', name: 'auto' },
