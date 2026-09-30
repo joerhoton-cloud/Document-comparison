@@ -1,4 +1,4 @@
-import Stripe from 'stripe';
+import { stripeClient } from './auth';
 import { env } from './env';
 
 export interface PublicPrice {
@@ -15,7 +15,7 @@ let cache: { at: number; prices: PublicPrice[] } | undefined;
 async function prices(): Promise<PublicPrice[]> {
   if (!env.stripe) return [];
   if (cache && Date.now() - cache.at < 10 * 60_000) return cache.prices;
-  const stripe = new Stripe(env.stripe.secretKey);
+  const stripe = stripeClient();
   const ids: [string, string | undefined][] = [
     ['team', env.stripe.monthlyPriceId],
     ['team-annual', env.stripe.annualPriceId],

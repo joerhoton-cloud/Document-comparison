@@ -56,6 +56,8 @@ export const env = {
          * without one, Stripe silently collects no tax.
          */
         automaticTax: process.env.STRIPE_AUTOMATIC_TAX === 'true',
+        /** Tests only: send Stripe API calls to stripe-mock (e.g. http://localhost:12111). */
+        apiBase: isProd ? undefined : process.env.STRIPE_API_BASE,
       }
     : undefined,
 };

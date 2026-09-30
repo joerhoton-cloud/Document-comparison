@@ -64,7 +64,7 @@ The start screen has a **Try the sample contracts** button. Sample files in PDF,
 
 ```bash
 npm test             # unit tests (diff engine, PDF layout analysis)
-npm run test:server  # API tests against Postgres (TEST_DATABASE_URL)
+npm run test:server  # API tests against Postgres (TEST_DATABASE_URL); Stripe checks run when stripe-mock is up
 npm run test:e2e     # browser tests (Playwright): sign-up, team review hand-off, comparisons
 npm run build        # dist/ (web app) + dist-server/ (API server)
 ```
@@ -85,7 +85,7 @@ The server creates and updates its tables on start (additive changes only). Heal
 2. **Email.** Create a [Resend](https://resend.com) account, verify your sending domain, then set `RESEND_API_KEY` and `EMAIL_FROM`.
 3. **Stripe.**
    - Build and test in a **Stripe sandbox**, then repeat the setup in live mode.
-   - Create one product ("DocCompare Team") with a per-unit recurring price for one seat (monthly, and optionally a yearly price on the same product). Set `STRIPE_PRICE_MONTHLY` / `STRIPE_PRICE_ANNUAL`.
+   - Run `STRIPE_SECRET_KEY=sk_test_… npm run stripe:setup -- --monthly 49 --annual 490` (your per-seat prices). It creates the "DocCompare Team" product and seat prices, configures the customer portal, and creates the webhook when `BASE_URL` is a public https URL. It prints the `STRIPE_PRICE_*` values to set, and is safe to re-run.
    - Create a **restricted key** with the permissions listed in `.env.example`, and store it in your host's secrets store as `STRIPE_SECRET_KEY`.
    - Add a webhook endpoint at `{BASE_URL}/api/auth/stripe/webhook` for `checkout.session.completed`, `customer.subscription.created/updated/deleted`, `invoice.paid` and `invoice.payment_failed`, and set `STRIPE_WEBHOOK_SECRET`. Webhooks are required: they are how the app learns about trials ending, renewals, failed cards and cancellations.
    - Turn on the customer portal (Settings → Billing → Customer portal): let customers update payment methods, view invoices and cancel.

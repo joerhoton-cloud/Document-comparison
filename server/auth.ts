@@ -9,6 +9,15 @@ import { sendEmail } from './mailer';
 
 export const BILLING_ENABLED = !!env.stripe;
 
+export function stripeClient(): Stripe {
+  const base = env.stripe!.apiBase ? new URL(env.stripe!.apiBase) : undefined;
+  return new Stripe(
+    env.stripe!.secretKey,
+    base && { host: base.hostname, port: Number(base.port), protocol: base.protocol.replace(':', '') as 'http' | 'https' },
+  );
+}
+
+
 /** Roles allowed to manage billing and remove other people's saved comparisons. */
 export const ADMIN_ROLES = new Set(['owner', 'admin']);
 
@@ -53,7 +62,7 @@ const plugins = [
   ...(env.stripe
     ? [
         stripe({
-          stripeClient: new Stripe(env.stripe.secretKey),
+          stripeClient: stripeClient(),
           stripeWebhookSecret: env.stripe.webhookSecret,
           createCustomerOnSignUp: false,
           // Subscription lifecycle events are synced by the plugin; this adds dunning emails.
