@@ -1,6 +1,6 @@
 # DocCompare: secure side-by-side document comparison
 
-A web app for comparing two versions of a document, modeled on the "Compare Documents" feature in ABBYY FineReader PDF. Everything runs **inside the user's browser**: files are never uploaded, stored or sent to a third party.
+A subscription web app for comparing two versions of a document, modeled on the "Compare Documents" feature in ABBYY FineReader PDF. Documents are read and compared **inside each user's browser**: they are never uploaded, stored or sent to a third party. Accounts, team workspaces, optional saved review progress and per-seat Stripe billing are handled by a small server that never sees document content.
 
 ![Side-by-side comparison](docs/screenshot.png)
 
@@ -18,16 +18,30 @@ A web app for comparing two versions of a document, modeled on the "Compare Docu
 | **Export** | A self-contained HTML report (summary, list of differences, full side-by-side view and **SHA-256 hashes** of both files for audit), a CSV of the differences, or Print / Save as PDF. |
 | **Smart grouping** | Similar paragraphs are paired even when paragraphs are inserted around them. Amounts like `$48,000` or `7:00` are treated as single words. Edits separated only by punctuation (`twelve (12)` → `twenty-four (24)`) count as one change. |
 
+### Teams and subscriptions
+
+| | |
+|---|---|
+| **Sign-in** | Email and password (12+ characters, email confirmation required), one-time email sign-in links, "Sign in with Microsoft" and "Sign in with Google", optional two-step verification (authenticator app, with backup codes), and password reset. |
+| **Workspaces** | Each customer is a workspace. Owners and admins invite colleagues by email and choose Member or Admin roles; people accept by following the emailed link. |
+| **Billing** | Stripe Checkout with a per-seat monthly (and optional yearly) plan and a free trial. The seat count follows the number of members automatically. Owners and admins manage cards and invoices in the Stripe billing portal. Workspaces without an active or trial subscription are locked. |
+| **Optional saving** | Chosen before each comparison. **Don't save** records nothing. **Log activity** records who compared which files, when. **Save review progress** also stores review marks and notes. In every case only file names, sizes, SHA-256 fingerprints and counts are stored, never document text. |
+| **Review progress** | Mark each change ✓ Reviewed or ⚑ Flagged and add a note (keys `r` and `f`). Progress ("9/14 reviewed · 1 flagged") is shared with the team. |
+| **No duplicate work** | When two files are selected, their fingerprints are checked against the workspace history. If a teammate already compared them (in either order), a banner offers to continue their review. |
+| **History** | A list of saved comparisons with who, when and review progress, plus a team activity feed (compared, reopened, reviewed, flagged, deleted). To reopen one, you select the same files again; the app verifies they match the fingerprints. |
+
 Not included yet: OCR for scanned PDFs (the app detects them and asks for an OCR'd copy), legacy `.doc` files, and formatting-only changes such as bold or font.
 
 ## Security model
 
-- **Client-side only.** PDF parsing (PDF.js), Word parsing (mammoth) and the diff all run in the browser tab. The server only delivers static files.
+- **Documents stay client-side.** PDF parsing (PDF.js), Word parsing (mammoth) and the diff all run in the browser tab. The API accepts only small JSON bodies (64 KB limit) of metadata, and the e2e tests verify that no request ever contains document text.
 - **No outbound connections.** A strict Content-Security-Policy (`connect-src 'self'`, no third-party scripts, fonts or CDNs) makes it technically impossible for the page to send document content elsewhere. PDF.js workers, fonts and character maps are bundled and served from the same origin.
-- **No persistence.** Documents are held in memory only. Clicking "New" drops them. Only the comparison settings (checkboxes) are saved, in `localStorage`.
+- **No document persistence.** Documents are held in memory only. Clicking "New" drops them. Saving (off by default) stores metadata, fingerprints and review marks. Review marks are keyed by a hash of each change, not its text. Notes are the only free text, and people write those themselves.
+- **Accounts.** [Better Auth](https://www.better-auth.com) handles passwords, sessions, email verification, 2FA, OAuth, rate limiting and organization roles. Every API query is scoped to the caller's workspace, and tests check that one workspace can't read or change another's data.
+- **CSRF.** Every state-changing request must carry this app's own `Origin`.
 - **No markup injection.** Document text is always inserted as text nodes, never as HTML. HTML and DOCX input is parsed into an inert DOM (scripts never run). CSV exports are protected against spreadsheet formula injection.
 - **Hardened PDF parsing.** PDF.js is pinned to a patched release (≥ 6.2.108, fixing GHSA-hq66-cqwq-w95j), with XFA and font-face loading disabled. `npm audit` runs in CI.
-- **Hardened server.** The nginx config sends CSP, HSTS, `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy: no-referrer` and COOP/CORP headers. It rejects non-GET requests and request bodies, and runs as a non-root user.
+- **Hardened server.** Every response carries CSP, HSTS (in production), `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy: no-referrer` and COOP/CORP headers. The container runs as a non-root user.
 
 The e2e test suite checks that comparing documents makes **zero** requests to any other origin and triggers no CSP violations.
 
@@ -35,41 +49,49 @@ See [SECURITY.md](SECURITY.md) for deployment guidance.
 
 ## Getting started
 
-Requires Node.js 22+.
+Requires Node.js 22+ and PostgreSQL 14+.
 
 ```bash
 npm install
-npm run dev          # http://localhost:5173
+createdb doccompare                        # or: docker compose up db
+export DATABASE_URL=postgres://localhost/doccompare
+npm run build && npm start                 # http://localhost:3000
 ```
+
+With no Stripe, Resend or OAuth settings, the app runs in development mode: billing is off, and emails (confirmation links, invitations) are printed to the server log instead of being sent. For live-reloading work on the interface, run `npm run dev:server` and `npm run dev` together, then open http://localhost:5173.
 
 The start screen has a **Try the sample contracts** button. Sample files in PDF, Word and text are in [`samples/`](samples/) (regenerate them with `python3 samples/generate.py`).
 
 ```bash
 npm test             # unit tests (diff engine, PDF layout analysis)
-npm run test:e2e     # browser tests (Playwright) against a production build
-npm run build        # static site in dist/
+npm run test:server  # API tests against Postgres (TEST_DATABASE_URL)
+npm run test:e2e     # browser tests (Playwright): sign-up, team review hand-off, comparisons
+npm run build        # dist/ (web app) + dist-server/ (API server)
 ```
 
 ## Deploying
 
-`npm run build:single` produces `dist-single/doccompare.html`: the whole app in one HTML file, with the PDF worker embedded. You can email it, host it anywhere, or open it as an Artifact. That build swaps the download and print buttons for "Copy list of differences", and CJK PDFs may extract less well because the character maps aren't embedded.
+Configuration is by environment variables; [`.env.example`](.env.example) documents each one.
 
-The build output in `dist/` is a static site, so any static host works. For the recommended hardened setup:
+**Managed hosting (recommended to start).** [`render.yaml`](render.yaml) is a one-click Render blueprint: the Docker web service plus a managed Postgres, about $20–30/month to start. The same image runs on Fly.io, Railway, Azure Container Apps or AWS App Runner with any managed Postgres (Neon, Supabase, RDS).
 
-```bash
-docker build -t doccompare .
-docker run -p 8080:8080 doccompare     # http://localhost:8080, health check at /healthz
-```
+**Self-hosted.** `cp .env.example .env`, fill it in, then run `docker compose up -d`. This runs the app on port 3000 plus Postgres. Put it behind your TLS terminator.
 
-The image is `nginx-unprivileged` serving `dist/` with [`deploy/nginx.conf`](deploy/nginx.conf) and [`deploy/security-headers.conf`](deploy/security-headers.conf). Put it behind your TLS terminator.
+The server creates and updates its tables on start (additive changes only). Health check: `GET /healthz`.
 
-### Offering it to Cision (or another organization)
+### Launch checklist
 
-Because no document ever reaches the server, the server needs no document storage, retention policy or data-processing review. To restrict who can open the app:
+1. **Domain and HTTPS.** Set `BASE_URL` to the public URL.
+2. **Email.** Create a [Resend](https://resend.com) account, verify your sending domain, then set `RESEND_API_KEY` and `EMAIL_FROM`.
+3. **Stripe.**
+   - Create a product with a *per-unit* recurring price for one seat (monthly, and optionally yearly), and set `STRIPE_PRICE_MONTHLY` / `STRIPE_PRICE_ANNUAL`.
+   - Add a webhook endpoint at `{BASE_URL}/api/auth/stripe/webhook` for `checkout.session.completed` and `customer.subscription.created/updated/deleted`, and set `STRIPE_WEBHOOK_SECRET`.
+   - Turn on the customer portal in Stripe settings.
+   - Test the whole flow in Stripe test mode first.
+4. **Microsoft / Google sign-in (optional).** Register an app in Microsoft Entra ID and/or Google Cloud with the redirect URIs listed in `.env.example`.
+5. **Your first customer.** Sign up, create the workspace (e.g. "Cision"), start the trial, and invite the 3–4 users from the Team page.
 
-1. **Put it behind SSO.** Place the container behind your identity-aware proxy, e.g. Okta or Entra ID through [oauth2-proxy](https://oauth2-proxy.github.io/oauth2-proxy/), Cloudflare Access, Azure App Proxy or Google IAP. The app needs no code changes for this.
-2. **Host it on an internal domain** over HTTPS. `crypto.subtle`, used for the report's SHA-256 hashes, needs a secure context.
-3. Optionally **pin the image digest** and rebuild on dependency updates. Dependabot or Renovate plus the CI workflow cover this.
+`npm run build:single` still produces `dist-single/doccompare.html`, a standalone, account-free copy of the comparison tool in one file (no saving or teams).
 
 ## Project layout
 
@@ -78,11 +100,17 @@ src/
   compare/engine.ts     paragraph alignment + word/char diff, change numbering
   compare/normalize.ts  tokenizer, normalization options, similarity
   extract/              PDF (pdf.js + layout analysis), DOCX (mammoth), HTML, text
-  ui/viewer.ts          side-by-side view, differences list, navigation
+  ui/viewer.ts          side-by-side view, differences list, navigation, review marks
+  account/              sign-in, workspace, plan, team, history and account screens
   report.ts             HTML/CSV export
-deploy/                 nginx config and security headers
+  main.ts               app shell: routing, saving, resuming
+server/
+  auth.ts               Better Auth: email, magic link, OAuth, 2FA, organizations, Stripe
+  api.ts                workspace API: saved comparisons, reviews, activity, lookup
+  app.ts                Hono app: security headers, CSRF, static files
+  migrate.ts            database schema
 e2e/                    Playwright tests
-tests/                  Vitest unit tests
+tests/                  Vitest unit tests; tests/server: API tests against Postgres
 ```
 
 ### How the comparison works

@@ -10,6 +10,20 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/doccompare_test
+      E2E_DATABASE_URL: postgres://postgres:postgres@localhost:5432/doccompare_e2e
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -18,8 +32,13 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm audit --omit=dev --audit-level=high
+      - name: Create test databases
+        run: |
+          psql postgres://postgres:postgres@localhost:5432/postgres -c 'CREATE DATABASE doccompare_test' -c 'CREATE DATABASE doccompare_e2e'
       - run: npm run typecheck
       - run: npm test
+      - run: npm run test:server
       - run: npm run build
+      - run: npm run build:single
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e

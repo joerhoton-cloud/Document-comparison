@@ -1,5 +1,5 @@
 import type { Change, ChangeType, CompareResult, ExtractedDoc, Row, Segment } from '../types';
-import { clear, formatBytes, h, icon } from './dom';
+import { append, clear, formatBytes, h, icon } from './dom';
 
 /** Unchanged rows kept visible around each change when "changes only" is on. */
 const CONTEXT_ROWS = 1;
@@ -23,6 +23,26 @@ export interface ViewerCallbacks {
   optionsPanel(): HTMLElement;
 }
 
+export interface ReviewMarkView {
+  status: 'reviewed' | 'flagged';
+  note: string | null;
+  by: string;
+}
+
+/** Shared review state for a saved comparison (see src/app/review.ts). */
+export interface ReviewController {
+  /** Marks keyed by change id. */
+  marks: Map<number, ReviewMarkView>;
+  /** False when only activity is logged (or nothing is saved): marks can't be recorded. */
+  canEdit: boolean;
+  /** Short status line above the list, e.g. "Saved to Acme · visible to your team". */
+  label: string;
+  onMark(changeId: number, status: 'reviewed' | 'flagged' | null, note: string | null): Promise<boolean>;
+  /** Offered when not saving progress; starts saving review progress for this comparison. */
+  onEnableProgress?: () => void;
+  enableLabel?: string;
+}
+
 /** Side-by-side comparison view with a navigable list of differences. */
 export class Viewer {
   readonly root: HTMLElement;
@@ -31,6 +51,10 @@ export class Viewer {
   private changesOnly = false;
   private expanded = new Set<number>();
   private currentId: number | null = null;
+  private review: ReviewController | null = null;
+  private hideReviewed = false;
+  private reviewBar = h('div', { class: 'review-bar', hidden: true });
+  private progressEl = h('span', { class: 'review-progress', hidden: true });
 
   private rowsEl = h('div', { class: 'rows', tabindex: '0', 'aria-label': 'Side-by-side comparison' });
   private listEl = h('ol', { class: 'change-list' });
@@ -95,6 +119,7 @@ export class Viewer {
         h('button', { class: 'btn ghost', onclick: () => this.cb.onNewComparison(), title: 'Start over (clears both documents from memory)' }, icon('back'), 'New'),
         h('button', { class: 'btn ghost icon-btn', onclick: () => this.cb.onSwap(), title: 'Swap original and revised', 'aria-label': 'Swap original and revised' }, icon('swap')),
         this.summaryEl,
+        this.progressEl,
         h('div', { class: 'spacer' }),
         h('label', { class: 'toggle' }, this.changesOnlyInput, h('span', null, 'Changes only')),
         h(
@@ -110,7 +135,7 @@ export class Viewer {
       h(
         'div',
         { class: 'workspace' },
-        h('aside', { class: 'changes-panel', 'aria-label': 'Differences' }, h('h2', null, 'Differences'), this.listEl),
+        h('aside', { class: 'changes-panel', 'aria-label': 'Differences' }, h('h2', null, 'Differences'), this.reviewBar, this.listEl),
         h('div', { class: 'compare' }, this.headsEl, this.rowsEl),
       ),
     );
@@ -148,6 +173,14 @@ export class Viewer {
     } else if (e.key === 'k' || e.key === 'ArrowUp' || e.key === 'p') {
       e.preventDefault();
       this.step(-1);
+    } else if ((e.key === 'r' || e.key === 'f') && this.review?.canEdit && this.currentId !== null) {
+      e.preventDefault();
+      const status = e.key === 'r' ? 'reviewed' : 'flagged';
+      const id = this.currentId;
+      const cur = this.review.marks.get(id);
+      void this.mark(id, cur?.status === status ? null : status, cur?.note ?? null).then(() => {
+        if (status === 'reviewed' && cur?.status !== 'reviewed') this.step(1);
+      });
     }
   };
 
@@ -164,7 +197,71 @@ export class Viewer {
   }
 
   private visibleChanges(): Change[] {
-    return this.result.changes.filter((c) => this.filters.has(c.type));
+    return this.result.changes.filter(
+      (c) => this.filters.has(c.type) && !(this.hideReviewed && this.review?.marks.get(c.id)?.status === 'reviewed'),
+    );
+  }
+
+  /** Attach (or detach) shared review state. */
+  setReview(review: ReviewController | null) {
+    this.review = review;
+    this.renderReviewBar();
+    this.renderList();
+    this.applyMarksToRows();
+    this.updateCounter();
+  }
+
+  private renderReviewBar() {
+    clear(this.reviewBar);
+    const r = this.review;
+    this.reviewBar.hidden = !r;
+    this.progressEl.hidden = !r?.canEdit;
+    if (!r) return;
+    const total = this.result.changes.length;
+    const reviewed = [...r.marks.values()].filter((m) => m.status === 'reviewed').length;
+    const flagged = [...r.marks.values()].filter((m) => m.status === 'flagged').length;
+    this.progressEl.textContent = `${reviewed}/${total} reviewed${flagged ? ` · ${flagged} flagged` : ''}`;
+    this.progressEl.classList.toggle('done', total > 0 && reviewed === total);
+    append(this.reviewBar, [
+      h('span', { class: `save-state ${r.canEdit ? 'saving' : ''}` }, r.label),
+      r.onEnableProgress && h('button', { class: 'btn sm', onclick: () => r.onEnableProgress?.() }, r.enableLabel ?? 'Save review progress'),
+      r.canEdit &&
+        h(
+          'label',
+          { class: 'toggle sm' },
+          h('input', {
+            type: 'checkbox',
+            checked: this.hideReviewed,
+            onchange: (e: Event) => {
+              this.hideReviewed = (e.target as HTMLInputElement).checked;
+              this.renderList();
+              this.updateCounter();
+            },
+          }),
+          h('span', null, 'Hide reviewed'),
+        ),
+    ]);
+  }
+
+  private applyMarksToRows() {
+    this.rowsEl.querySelectorAll<HTMLElement>('[data-change]').forEach((el) => {
+      const m = this.review?.marks.get(Number(el.dataset.change));
+      el.classList.toggle('is-reviewed', m?.status === 'reviewed');
+      el.classList.toggle('is-flagged', m?.status === 'flagged');
+    });
+  }
+
+  private async mark(id: number, status: 'reviewed' | 'flagged' | null, note: string | null) {
+    const r = this.review;
+    if (!r?.canEdit) return;
+    const ok = await r.onMark(id, status, note);
+    if (!ok) return this.flash('Could not save. Check your connection and try again.');
+    this.renderReviewBar();
+    this.applyMarksToRows();
+    const li = this.listEl.querySelector<HTMLElement>(`[data-id="${id}"]`);
+    if (li) li.replaceWith(this.listItem(this.result.changes[id]));
+    if (this.currentId !== null) this.markListItem(this.currentId, false);
+    this.updateCounter();
   }
 
   private renderHeads(left: ExtractedDoc, right: ExtractedDoc) {
@@ -227,29 +324,81 @@ export class Viewer {
       );
       return;
     }
-    for (const c of items) {
-      const page = c.leftPage || c.rightPage ? `p. ${c.leftPage ?? '–'} ↔ ${c.rightPage ?? '–'}` : `¶ ${c.row + 1}`;
-      this.listEl.append(
-        h(
-          'li',
-          { class: `change-item ${c.type}`, 'data-id': c.id },
-          h(
-            'button',
-            { onclick: () => this.select(c.id) },
-            h('span', { class: 'ci-head' }, h('span', { class: `badge ${c.type}` }, TYPE_LABEL[c.type]), h('span', { class: 'ci-where' }, page)),
-            c.context && h('span', { class: 'ci-context' }, c.context),
-            h(
-              'span',
-              { class: 'ci-body' },
-              c.leftText.trim() && h('del', null, snippet(c.leftText)),
-              c.leftText.trim() && c.rightText.trim() && h('span', { class: 'arrow' }, ' → '),
-              c.rightText.trim() && h('ins', null, snippet(c.rightText)),
-            ),
-          ),
-        ),
-      );
-    }
+    for (const c of items) this.listEl.append(this.listItem(c));
     if (this.currentId !== null) this.markListItem(this.currentId, false);
+  }
+
+  private listItem(c: Change): HTMLElement {
+    const page = c.leftPage || c.rightPage ? `p. ${c.leftPage ?? '–'} ↔ ${c.rightPage ?? '–'}` : `¶ ${c.row + 1}`;
+    const m = this.review?.marks.get(c.id);
+    return h(
+      'li',
+      { class: `change-item ${c.type}${m ? ` mark-${m.status}` : ''}`, 'data-id': c.id },
+      h(
+        'button',
+        { class: 'ci-main', onclick: () => this.select(c.id) },
+        h(
+          'span',
+          { class: 'ci-head' },
+          h('span', { class: `badge ${c.type}` }, TYPE_LABEL[c.type]),
+          m && h('span', { class: `mark ${m.status}`, title: `${m.status === 'reviewed' ? 'Reviewed' : 'Flagged'} by ${m.by}` }, m.status === 'reviewed' ? '✓ Reviewed' : '⚑ Flagged'),
+          h('span', { class: 'ci-where' }, page),
+        ),
+        c.context && h('span', { class: 'ci-context' }, c.context),
+        h(
+          'span',
+          { class: 'ci-body' },
+          c.leftText.trim() && h('del', null, snippet(c.leftText)),
+          c.leftText.trim() && c.rightText.trim() && h('span', { class: 'arrow' }, ' → '),
+          c.rightText.trim() && h('ins', null, snippet(c.rightText)),
+        ),
+        m?.note && h('span', { class: 'ci-note' }, `“${m.note}” — ${m.by}`),
+      ),
+    );
+  }
+
+  /** Review actions shown under the current change. */
+  private itemActions(c: Change): HTMLElement {
+    const r = this.review!;
+    const m = r.marks.get(c.id);
+    const note = h('textarea', { rows: 2, maxlength: 4000, placeholder: 'Add a note for your team', 'aria-label': 'Note' });
+    note.value = m?.note ?? '';
+    const noteBox = h(
+      'div',
+      { class: 'ci-note-edit', hidden: !m?.note },
+      note,
+      h('button', { class: 'btn sm primary', onclick: () => this.mark(c.id, m?.status ?? 'reviewed', note.value.trim() || null) }, 'Save note'),
+    );
+    return h(
+      'div',
+      { class: 'ci-actions' },
+      h(
+        'div',
+        { class: 'ci-buttons' },
+        h(
+          'button',
+          { class: `btn sm${m?.status === 'reviewed' ? ' on-reviewed' : ''}`, title: 'Mark reviewed (r)', 'aria-pressed': String(m?.status === 'reviewed'), onclick: () => this.mark(c.id, m?.status === 'reviewed' ? null : 'reviewed', m?.note ?? null) },
+          '✓ Reviewed',
+        ),
+        h(
+          'button',
+          { class: `btn sm${m?.status === 'flagged' ? ' on-flagged' : ''}`, title: 'Flag for follow-up (f)', 'aria-pressed': String(m?.status === 'flagged'), onclick: () => this.mark(c.id, m?.status === 'flagged' ? null : 'flagged', m?.note ?? null) },
+          '⚑ Flag',
+        ),
+        h(
+          'button',
+          {
+            class: 'btn sm ghost',
+            onclick: () => {
+              noteBox.hidden = !noteBox.hidden;
+              if (!noteBox.hidden) note.focus();
+            },
+          },
+          m?.note ? 'Edit note' : 'Note',
+        ),
+      ),
+      noteBox,
+    );
   }
 
   private renderRows() {
@@ -298,6 +447,7 @@ export class Viewer {
       i++;
     }
     this.rowsEl.append(frag);
+    this.applyMarksToRows();
     if (!rows.length) this.rowsEl.append(h('p', { class: 'empty' }, 'Both documents are empty.'));
   }
 
@@ -334,8 +484,10 @@ export class Viewer {
 
   private markListItem(id: number, scroll: boolean) {
     this.listEl.querySelectorAll('.current').forEach((el) => el.classList.remove('current'));
+    this.listEl.querySelectorAll('.ci-actions').forEach((el) => el.remove());
     const li = this.listEl.querySelector<HTMLElement>(`[data-id="${id}"]`);
     li?.classList.add('current');
+    if (li && this.review?.canEdit) li.append(this.itemActions(this.result.changes[id]));
     if (scroll) li?.scrollIntoView({ block: 'nearest' });
   }
 

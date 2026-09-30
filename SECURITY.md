@@ -7,7 +7,19 @@
                                                                                └──▶ optional export (download to disk)
 ```
 
-The server only serves static HTML/JS/CSS. There is no API, database, upload endpoint or telemetry. Document bytes, extracted text and comparison results exist only in the memory of the tab that opened them.
+Document bytes, extracted text and comparison results exist only in the memory of the tab that opened them. The server handles accounts, workspaces, billing and, **only when a user opts in**, comparison metadata:
+
+| Stored when saving is on | Never stored |
+|---|---|
+| File names and sizes | File contents |
+| SHA-256 fingerprints of each file | Extracted text |
+| Difference counts and similarity % | The differences themselves |
+| Comparison settings | Page images |
+| Review marks, keyed by a hash of each change | |
+| Notes people type on changes | |
+| Who did what, and when (activity log) | |
+
+There is no upload endpoint. API request bodies are capped at 64 KB, and there is no telemetry.
 
 ## Controls
 
@@ -21,11 +33,30 @@ The server only serves static HTML/JS/CSS. There is no API, database, upload end
 | Clickjacking | `frame-ancestors 'none'` and `X-Frame-Options: DENY`. |
 | Leakage via referrer/indexing | `Referrer-Policy: no-referrer`, `noindex`. |
 | Oversized input | 100 MB per-file limit. |
-| Supply chain | Three runtime dependencies (`pdfjs-dist`, `mammoth`, `diff`), a lockfile, and `npm audit --audit-level=high` in CI. |
+| Account takeover | Passwords of 12+ characters (hashed with scrypt by Better Auth); email verification before password sign-in; optional TOTP two-step verification; rate limits on sign-in, sign-up, reset and 2FA endpoints; sessions expire after 7 days; password reset revokes sessions. |
+| Cross-workspace access | Every API query is filtered by the caller's active workspace *and* membership is re-checked on each request. Integration tests cover reads, writes and deletes from another workspace. |
+| CSRF | Session cookies are `SameSite=Lax`, and all non-GET API requests must carry this app's exact `Origin`. |
+| Billing abuse | Only owners/admins can start or change subscriptions (`authorizeReference`). Stripe webhooks are signature-verified. Workspaces without an active or trial subscription get `402` from every workspace API. |
+| Supply chain | Browser code uses four libraries (`pdfjs-dist`, `mammoth`, `diff`, `qrcode-generator`). The server uses `better-auth`, `hono`, `pg`/`kysely`, `stripe` and `zod`. Versions are pinned in a lockfile, and CI runs `npm audit --audit-level=high`. |
 
 ## Access control
 
-The app has no built-in login, by design: it holds no data worth protecting server-side. Restrict access at the edge with SSO (see "Offering it to Cision" in the README).
+Sign-in is required, with email + password, a one-time email link, or Microsoft/Google. Roles:
+
+| Role | Can |
+|---|---|
+| Owner | Everything, including billing and deleting the workspace. |
+| Admin | Invite and remove members, manage billing, delete anyone's saved comparisons. |
+| Member | Compare, save, review, see the team history, and delete their own saved comparisons. |
+
+If a customer needs their identity provider to control access, restrict Microsoft sign-in to their tenant (`MICROSOFT_TENANT_ID`). SAML/Okta SSO can be added with Better Auth's SSO plugin.
+
+## Operations
+
+- Set a long random `BETTER_AUTH_SECRET` (`openssl rand -base64 48`) and keep it secret; rotating it signs everyone out.
+- Serve over HTTPS only. Secure cookies and HSTS are enabled when `NODE_ENV=production`.
+- Set `CLIENT_IP_HEADER` to the header your load balancer sets, and make sure the app is reachable only through it; otherwise clients could spoof their IP to dodge rate limits.
+- Back up Postgres. It holds accounts and saved metadata only, so a leak would expose file names and notes, not documents.
 
 ## Reporting a vulnerability
 

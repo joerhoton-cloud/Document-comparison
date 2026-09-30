@@ -6,3 +6,5 @@ playwright-report/
 *.log
 .DS_Store
 dist-single/
+.e2e-server.log
+dist-server/

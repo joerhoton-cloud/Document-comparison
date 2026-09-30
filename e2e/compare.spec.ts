@@ -1,9 +1,10 @@
 import { expect, test } from '@playwright/test';
+import { signedInWithWorkspace } from './helpers';
 
 const sample = (name: string) => `samples/${name}`;
 
 async function compare(page: import('@playwright/test').Page, left: string, right: string) {
-  await page.goto('/');
+  await signedInWithWorkspace(page);
   const inputs = page.locator('input[type=file]');
   await inputs.nth(0).setInputFiles(sample(left));
   await page.locator('input[type=file]').nth(1).setInputFiles(sample(right));
@@ -26,7 +27,8 @@ for (const [left, right] of [
     // Page errors and console errors (including CSP violations) fail the test.
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+    // (The signed-out session check before sign-in legitimately returns 401.)
+    page.on('console', (m) => m.type() === 'error' && !m.text().includes('status of 401') && errors.push(m.text()));
 
     await compare(page, left, right);
 
@@ -57,7 +59,7 @@ test('identical documents report no differences', async ({ page }) => {
 
 test('exports an HTML report', async ({ page }) => {
   await compare(page, 'contract-original.docx', 'contract-revised.docx');
-  await page.locator('.menu summary').click();
+  await page.locator('.results .menu summary').click();
   const [download] = await Promise.all([
     page.waitForEvent('download'),
     page.getByRole('button', { name: 'Comparison report (.html)' }).click(),
@@ -66,7 +68,7 @@ test('exports an HTML report', async ({ page }) => {
 });
 
 test('rejects unsupported files with a clear message', async ({ page }) => {
-  await page.goto('/');
+  await signedInWithWorkspace(page);
   await page.locator('input[type=file]').nth(0).setInputFiles({ name: 'x.exe', mimeType: 'application/octet-stream', buffer: Buffer.from('MZ\x90\x00') });
   await page.locator('input[type=file]').nth(1).setInputFiles(sample('contract-revised.docx'));
   await page.getByRole('button', { name: 'Compare documents' }).click();
