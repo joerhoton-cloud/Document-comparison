@@ -119,6 +119,15 @@ export function buildCsv(result: CompareResult): string {
   return '﻿' + [header.map(csvCell).join(','), ...lines].join('\r\n');
 }
 
+/** Tab-separated list of differences, for pasting into a spreadsheet or email. */
+export function buildTsv(result: CompareResult): string {
+  const cell = (v: string | number | undefined) => String(v ?? '').replace(/\s+/g, ' ').trim();
+  const rows = result.changes.map((c) =>
+    [c.id + 1, LABEL[c.type], c.leftPage, c.rightPage, c.leftText, c.rightText].map(cell).join('\t'),
+  );
+  return [['#', 'Type', 'Original page', 'Revised page', 'Original text', 'Revised text'].join('\t'), ...rows].join('\n');
+}
+
 export function download(filename: string, content: string, type: string) {
   const url = URL.createObjectURL(new Blob([content], { type }));
   const a = document.createElement('a');

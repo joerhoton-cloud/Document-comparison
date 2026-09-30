@@ -1,11 +1,10 @@
 import { getDocument, GlobalWorkerOptions, PasswordException } from 'pdfjs-dist';
-// Bundled locally so no third-party CDN is ever contacted.
-import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import type { Block } from '../types';
 import { ExtractionError } from './errors';
 import { blocksFromPdfItems, type PdfTextItem } from './pdfLayout';
+import { pdfAssetBase, workerSrc } from './pdfWorker';
 
-GlobalWorkerOptions.workerSrc = workerUrl;
+GlobalWorkerOptions.workerSrc = workerSrc;
 
 export async function blocksFromPdf(
   data: ArrayBuffer,
@@ -19,9 +18,11 @@ export async function blocksFromPdf(
     useSystemFonts: false,
     stopAtErrors: false,
     // Served from this origin (copied from pdfjs-dist at build time).
-    cMapUrl: '/pdfjs/cmaps/',
-    cMapPacked: true,
-    standardFontDataUrl: '/pdfjs/standard_fonts/',
+    ...(pdfAssetBase && {
+      cMapUrl: `${pdfAssetBase}cmaps/`,
+      cMapPacked: true,
+      standardFontDataUrl: `${pdfAssetBase}standard_fonts/`,
+    }),
   });
   let pdf;
   try {

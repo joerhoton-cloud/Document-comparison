@@ -16,6 +16,10 @@ export interface ViewerCallbacks {
   onExportHtml(): void;
   onExportCsv(): void;
   onPrint(): void;
+  /** Copies the differences as tab-separated text; resolves false if the clipboard refused. */
+  onCopy(): Promise<boolean>;
+  /** False where downloads and printing are unavailable (e.g. sandboxed embeds). */
+  canDownload: boolean;
   optionsPanel(): HTMLElement;
 }
 
@@ -59,13 +63,23 @@ export class Viewer {
     const exportMenu = h(
       'details',
       { class: 'menu' },
-      h('summary', { class: 'btn' }, icon('download'), 'Export'),
+      h('summary', { class: 'btn' }, icon('download'), this.cb.canDownload ? 'Export' : 'Share'),
       h(
         'div',
         { class: 'menu-items' },
-        h('button', { onclick: () => this.cb.onExportHtml() }, 'Comparison report (.html)'),
-        h('button', { onclick: () => this.cb.onExportCsv() }, 'List of differences (.csv)'),
-        h('button', { onclick: () => this.cb.onPrint() }, icon('print'), 'Print / Save as PDF'),
+        this.cb.canDownload && h('button', { onclick: () => this.cb.onExportHtml() }, 'Comparison report (.html)'),
+        this.cb.canDownload && h('button', { onclick: () => this.cb.onExportCsv() }, 'List of differences (.csv)'),
+        this.cb.canDownload && h('button', { onclick: () => this.cb.onPrint() }, icon('print'), 'Print / Save as PDF'),
+        h(
+          'button',
+          {
+            onclick: async () => {
+              const ok = await this.cb.onCopy();
+              this.flash(ok ? 'Copied — paste into Excel, Sheets or an email' : 'Copy was blocked by the browser');
+            },
+          },
+          'Copy list of differences',
+        ),
       ),
     );
     exportMenu.addEventListener('click', (e) => {
@@ -100,12 +114,23 @@ export class Viewer {
         h('div', { class: 'compare' }, this.headsEl, this.rowsEl),
       ),
     );
+    this.root.append(this.toastEl);
 
     this.rowsEl.addEventListener('click', (e) => {
       const seg = (e.target as HTMLElement).closest<HTMLElement>('[data-change]');
       if (seg) this.select(Number(seg.dataset.change), false);
     });
     document.addEventListener('keydown', this.onKey);
+  }
+
+  private toastEl = h('div', { class: 'toast', role: 'status', hidden: true });
+  private toastTimer = 0;
+
+  private flash(message: string) {
+    this.toastEl.textContent = message;
+    this.toastEl.hidden = false;
+    clearTimeout(this.toastTimer);
+    this.toastTimer = window.setTimeout(() => (this.toastEl.hidden = true), 2600);
   }
 
   destroy() {

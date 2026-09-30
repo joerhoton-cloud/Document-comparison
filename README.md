@@ -42,7 +42,7 @@ npm install
 npm run dev          # http://localhost:5173
 ```
 
-Sample contracts to try are in [`samples/`](samples/) (regenerate them with `python3 samples/generate.py`).
+The start screen has a **Try the sample contracts** button. Sample files in PDF, Word and text are in [`samples/`](samples/) (regenerate them with `python3 samples/generate.py`).
 
 ```bash
 npm test             # unit tests (diff engine, PDF layout analysis)
@@ -51,6 +51,8 @@ npm run build        # static site in dist/
 ```
 
 ## Deploying
+
+`npm run build:single` produces `dist-single/doccompare.html`: the whole app in one HTML file, with the PDF worker embedded. You can email it, host it anywhere, or open it as an Artifact. That build swaps the download and print buttons for "Copy list of differences", and CJK PDFs may extract less well because the character maps aren't embedded.
 
 The build output in `dist/` is a static site, so any static host works. For the recommended hardened setup:
 

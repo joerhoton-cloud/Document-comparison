@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:e2e": "playwright test",
-    "typecheck": "tsc -p ."
+    "typecheck": "tsc -p .",
+    "build:single": "tsc -p . && vite build -c vite.artifact.config.ts && node scripts/inline-single.mjs"
   },
   "repository": {
     "type": "git",

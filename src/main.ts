@@ -1,9 +1,10 @@
 import './styles.css';
 import { compareDocuments } from './compare/engine';
 import { ACCEPT, extractDocument, ExtractionError } from './extract';
-import { buildCsv, buildHtmlReport, download, sha256 } from './report';
+import { buildCsv, buildHtmlReport, buildTsv, download, sha256 } from './report';
+import { sampleFiles } from './samples';
 import { DEFAULT_OPTIONS, type CompareOptions, type CompareResult, type ExtractedDoc } from './types';
-import { clear, formatBytes, h, icon } from './ui/dom';
+import { clear, formatBytes, h, icon, logo } from './ui/dom';
 import { optionsPanel } from './ui/options';
 import { Viewer } from './ui/viewer';
 
@@ -15,6 +16,8 @@ interface Slot {
 }
 
 const OPTIONS_KEY = 'doccompare.options';
+/** The embedded (single-file) build runs in a sandbox where downloads and printing are blocked. */
+const CAN_DOWNLOAD = import.meta.env.MODE !== 'artifact';
 
 const state = {
   slots: [
@@ -36,7 +39,7 @@ app.append(
   h(
     'header',
     { class: 'topbar' },
-    h('div', { class: 'brand' }, h('img', { src: '/favicon.svg', alt: '', width: 22, height: 22 }), h('span', null, 'DocCompare')),
+    h('div', { class: 'brand' }, logo(22), h('span', null, 'DocCompare')),
     h(
       'div',
       { class: 'secure-badge', title: 'Files are read and compared inside this browser tab. Nothing is uploaded, stored or logged.' },
@@ -98,7 +101,24 @@ function renderSetup() {
         setOptions(o);
         renderSetup();
       }),
-      compareBtn,
+      h(
+        'div',
+        { class: 'setup-buttons' },
+        compareBtn,
+        h(
+          'button',
+          {
+            class: 'btn ghost',
+            onclick: () => {
+              const [a, b] = sampleFiles();
+              setFile(0, a, false);
+              setFile(1, b, false);
+              void runComparison();
+            },
+          },
+          'Try the sample contracts',
+        ),
+      ),
       statusEl,
     ),
     h(
@@ -251,6 +271,16 @@ function showResults() {
       if (state.result) download(`${reportBase()}-differences.csv`, buildCsv(state.result), 'text/csv;charset=utf-8');
     },
     onPrint: () => window.print(),
+    canDownload: CAN_DOWNLOAD,
+    onCopy: async () => {
+      if (!state.result) return false;
+      try {
+        await navigator.clipboard.writeText(buildTsv(state.result));
+        return true;
+      } catch {
+        return false;
+      }
+    },
     optionsPanel: () =>
       optionsPanel(state.options, (o) => {
         setOptions(o);

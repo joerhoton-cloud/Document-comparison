@@ -74,3 +74,22 @@ export function icon(name: keyof typeof ICONS | string, size = 16): SVGSVGElemen
   svg.append(path);
   return svg;
 }
+
+/** App mark: two side-by-side pages (original red-bound, revised green-bound). */
+export function logo(size = 22): SVGSVGElement {
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('viewBox', '0 0 32 32');
+  svg.setAttribute('width', String(size));
+  svg.setAttribute('height', String(size));
+  svg.setAttribute('aria-hidden', 'true');
+  const add = (tag: string, attrs: Record<string, string>) => {
+    const el = document.createElementNS(ns, tag);
+    for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+    svg.append(el);
+  };
+  add('rect', { x: '3', y: '5', width: '12', height: '22', rx: '2', fill: '#2f5bea' });
+  add('rect', { x: '17', y: '5', width: '12', height: '22', rx: '2', fill: '#16a36a' });
+  add('path', { d: 'M6 11h6M6 15h6M6 19h4M20 11h6M20 15h6M20 19h4', stroke: '#fff', 'stroke-width': '1.6', 'stroke-linecap': 'round' });
+  return svg;
+}
