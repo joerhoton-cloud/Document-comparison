@@ -36,7 +36,8 @@ There is no upload endpoint. API request bodies are capped at 64 KB, and there i
 | Account takeover | Passwords of 12+ characters (hashed with scrypt by Better Auth); email verification before password sign-in; optional TOTP two-step verification; rate limits on sign-in, sign-up, reset and 2FA endpoints; sessions expire after 7 days; password reset revokes sessions. |
 | Cross-workspace access | Every API query is filtered by the caller's active workspace *and* membership is re-checked on each request. Integration tests cover reads, writes and deletes from another workspace. |
 | CSRF | Session cookies are `SameSite=Lax`, and all non-GET API requests must carry this app's exact `Origin`. |
-| Billing abuse | Only owners/admins can start or change subscriptions (`authorizeReference`). Stripe webhooks are signature-verified. Workspaces without an active or trial subscription get `402` from every workspace API. |
+| Billing abuse | Only owners/admins can start or change subscriptions (`authorizeReference`). Stripe webhooks are signature-verified, and access follows the webhook-synced subscription status, never the checkout return page. Workspaces without an active or trial subscription get `402` from every workspace API. |
+| Stripe key exposure | A restricted key (`rk_`) with least-privilege permissions is recommended. A live key is refused outside production. A pre-commit hook blocks commits containing Stripe keys, webhook secrets or `.env` files. |
 | Supply chain | Browser code uses four libraries (`pdfjs-dist`, `mammoth`, `diff`, `qrcode-generator`). The server uses `better-auth`, `hono`, `pg`/`kysely`, `stripe` and `zod`. Versions are pinned in a lockfile, and CI runs `npm audit --audit-level=high`. |
 
 ## Access control

@@ -47,7 +47,7 @@ export interface Database {
   user: { id: string; name: string; email: string };
   organization: { id: string; name: string; slug: string };
   member: { id: string; organizationId: string; userId: string; role: string };
-  subscription: { id: string; referenceId: string; status: string | null; plan: string; seats: number | null; periodEnd: Date | null; trialEnd: Date | null; cancelAtPeriodEnd: boolean | null };
+  subscription: { id: string; referenceId: string; stripeSubscriptionId: string | null; status: string | null; plan: string; seats: number | null; periodEnd: Date | null; trialEnd: Date | null; cancelAtPeriodEnd: boolean | null };
 }
 
 export const db = new Kysely<Database>({ dialect: new PostgresDialect({ pool }) });

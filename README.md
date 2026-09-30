@@ -84,10 +84,13 @@ The server creates and updates its tables on start (additive changes only). Heal
 1. **Domain and HTTPS.** Set `BASE_URL` to the public URL.
 2. **Email.** Create a [Resend](https://resend.com) account, verify your sending domain, then set `RESEND_API_KEY` and `EMAIL_FROM`.
 3. **Stripe.**
-   - Create a product with a *per-unit* recurring price for one seat (monthly, and optionally yearly), and set `STRIPE_PRICE_MONTHLY` / `STRIPE_PRICE_ANNUAL`.
-   - Add a webhook endpoint at `{BASE_URL}/api/auth/stripe/webhook` for `checkout.session.completed` and `customer.subscription.created/updated/deleted`, and set `STRIPE_WEBHOOK_SECRET`.
-   - Turn on the customer portal in Stripe settings.
-   - Test the whole flow in Stripe test mode first.
+   - Build and test in a **Stripe sandbox**, then repeat the setup in live mode.
+   - Create one product ("DocCompare Team") with a per-unit recurring price for one seat (monthly, and optionally a yearly price on the same product). Set `STRIPE_PRICE_MONTHLY` / `STRIPE_PRICE_ANNUAL`.
+   - Create a **restricted key** with the permissions listed in `.env.example`, and store it in your host's secrets store as `STRIPE_SECRET_KEY`.
+   - Add a webhook endpoint at `{BASE_URL}/api/auth/stripe/webhook` for `checkout.session.completed`, `customer.subscription.created/updated/deleted`, `invoice.paid` and `invoice.payment_failed`, and set `STRIPE_WEBHOOK_SECRET`. Webhooks are required: they are how the app learns about trials ending, renewals, failed cards and cancellations.
+   - Turn on the customer portal (Settings → Billing → Customer portal): let customers update payment methods, view invoices and cancel.
+   - For sales tax or VAT, add your registrations under Tax, then set `STRIPE_AUTOMATIC_TAX=true`. Checkout always collects the billing address and lets companies enter a tax ID.
+   - Test locally with the Stripe CLI: `stripe listen --forward-to localhost:3000/api/auth/stripe/webhook`, then check out with card `4242 4242 4242 4242`. Use `4000 0000 0000 0341` to trigger the failed-payment email.
 4. **Microsoft / Google sign-in (optional).** Register an app in Microsoft Entra ID and/or Google Cloud with the redirect URIs listed in `.env.example`.
 5. **Your first customer.** Sign up, create the workspace (e.g. "Cision"), start the trial, and invite the 3–4 users from the Team page.
 

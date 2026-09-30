@@ -70,3 +70,36 @@ it('opens the workspace during a trial', async () => {
   const me = await (await call('/api/me')).json();
   expect(me.workspace.subscription.status).toBe('trialing');
 });
+
+it('emails workspace owners and admins when a renewal payment fails', async () => {
+  const { onStripeEvent } = await import('../../server/billingEvents');
+  await sql`UPDATE subscription SET "stripeSubscriptionId" = 'sub_live_123' WHERE id = 'sub_trialing'`.execute(db);
+  const before = devOutbox.length;
+  await onStripeEvent({
+    type: 'invoice.payment_failed',
+    data: {
+      object: {
+        object: 'invoice',
+        currency: 'usd',
+        amount_due: 15600,
+        next_payment_attempt: 1_800_000_000,
+        parent: { type: 'subscription_details', subscription_details: { subscription: 'sub_live_123' } },
+      },
+    },
+  } as never);
+  const sent = devOutbox.slice(before);
+  expect(sent).toHaveLength(1);
+  expect(sent[0]).toMatchObject({ to: 'payer@acme.test', subject: 'Payment failed for Acme on DocCompare' });
+  expect(sent[0].text).toContain('$156.00');
+  expect(sent[0].action?.url).toBe('http://localhost:3000/?page=team');
+});
+
+it('ignores failed invoices for subscriptions it does not know', async () => {
+  const { onStripeEvent } = await import('../../server/billingEvents');
+  const before = devOutbox.length;
+  await onStripeEvent({
+    type: 'invoice.payment_failed',
+    data: { object: { currency: 'usd', amount_due: 100, parent: { subscription_details: { subscription: 'sub_unknown' } } } },
+  } as never);
+  expect(devOutbox.length).toBe(before);
+});

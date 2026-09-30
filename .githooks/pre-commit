@@ -1,0 +1,13 @@
+#!/bin/sh
+# Block commits that contain Stripe API keys, webhook secrets or .env files.
+# Enabled automatically by `npm install` (see "prepare" in package.json).
+if git diff --cached --name-only | grep -E '(^|/)\.env$' >/dev/null; then
+  echo "pre-commit: refusing to commit a .env file. Keep secrets in your host's secrets store." >&2
+  exit 1
+fi
+if git diff --cached -U0 | grep -E '^\+' | grep -E '(sk|rk)_(live|test)_[A-Za-z0-9]{10,}|whsec_[A-Za-z0-9]{10,}' >/dev/null; then
+  echo "pre-commit: this commit contains what looks like a Stripe key or webhook secret." >&2
+  echo "Move it to an environment variable or secrets store. If it was a live key, roll it now:" >&2
+  echo "  https://dashboard.stripe.com/apikeys" >&2
+  exit 1
+fi

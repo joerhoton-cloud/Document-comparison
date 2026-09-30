@@ -2,6 +2,7 @@ import { stripe } from '@better-auth/stripe';
 import { betterAuth, type BetterAuthOptions } from 'better-auth';
 import { magicLink, organization, twoFactor } from 'better-auth/plugins';
 import Stripe from 'stripe';
+import { onStripeEvent } from './billingEvents';
 import { db, pool } from './db';
 import { env } from './env';
 import { sendEmail } from './mailer';
@@ -55,6 +56,8 @@ const plugins = [
           stripeClient: new Stripe(env.stripe.secretKey),
           stripeWebhookSecret: env.stripe.webhookSecret,
           createCustomerOnSignUp: false,
+          // Subscription lifecycle events are synced by the plugin; this adds dunning emails.
+          onEvent: onStripeEvent,
           organization: { enabled: true },
           subscription: {
             enabled: true,
@@ -80,6 +83,18 @@ const plugins = [
             ],
             // Only workspace owners/admins can start, change or cancel the subscription.
             authorizeReference: async ({ user, referenceId }) => isWorkspaceAdmin(user.id, referenceId),
+            // Business-to-business checkout: invoices need the company's billing address and tax ID.
+            // Payment methods are deliberately not listed, so the Dashboard settings decide.
+            getCheckoutSessionParams: () => ({
+              params: {
+                integration_identifier: 'doccompare_team_seats_kqvhmwrt',
+                billing_address_collection: 'required',
+                tax_id_collection: { enabled: true },
+                customer_update: { address: 'auto', name: 'auto' },
+                allow_promotion_codes: true,
+                ...(env.stripe!.automaticTax && { automatic_tax: { enabled: true } }),
+              },
+            }),
           },
         }),
       ]

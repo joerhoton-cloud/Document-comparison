@@ -44,15 +44,26 @@ export const env = {
 
   stripe: process.env.STRIPE_SECRET_KEY
     ? {
+        /** Prefer a restricted key (rk_…) with only the permissions listed in .env.example. */
         secretKey: process.env.STRIPE_SECRET_KEY,
         webhookSecret: required('STRIPE_WEBHOOK_SECRET'),
         /** Per-seat recurring prices. */
         monthlyPriceId: required('STRIPE_PRICE_MONTHLY'),
         annualPriceId: process.env.STRIPE_PRICE_ANNUAL,
         trialDays: Number(process.env.TRIAL_DAYS ?? 14),
+        /**
+         * Stripe Tax. Only turn on after adding a tax registration in the Dashboard:
+         * without one, Stripe silently collects no tax.
+         */
+        automaticTax: process.env.STRIPE_AUTOMATIC_TAX === 'true',
       }
     : undefined,
 };
+
+if (env.stripe && /^[sr]k_live_/.test(env.stripe.secretKey) && !isProd)
+  throw new Error('A live Stripe key is configured outside production. Use a sandbox (test) key for development.');
+if (isProd && env.stripe && /^sk_/.test(env.stripe.secretKey))
+  console.warn('[stripe] Using an unrestricted secret key. Create a restricted key (rk_) with only the needed permissions.');
 
 if (isProd && !env.resendApiKey) throw new Error('RESEND_API_KEY is required in production to send sign-in and invitation emails.');
 if (isProd && !env.stripe && process.env.BILLING_DISABLED !== 'true')
