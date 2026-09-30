@@ -1,0 +1,8 @@
+node_modules
+dist
+public/pdfjs
+test-results
+playwright-report
+.git
+samples/*.pdf
+samples/*.docx

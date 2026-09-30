@@ -1,0 +1,38 @@
+{
+  "name": "doccompare",
+  "version": "0.1.0",
+  "description": "Secure, client-side side-by-side document comparison (PDF, Word, HTML, text).",
+  "scripts": {
+    "predev": "node scripts/copy-pdf-assets.mjs",
+    "dev": "vite",
+    "prebuild": "node scripts/copy-pdf-assets.mjs",
+    "build": "tsc -p . && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "typecheck": "tsc -p ."
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/joerhoton-cloud/Document-comparison.git"
+  },
+  "license": "UNLICENSED",
+  "bugs": {
+    "url": "https://github.com/joerhoton-cloud/Document-comparison/issues"
+  },
+  "homepage": "https://github.com/joerhoton-cloud/Document-comparison#readme",
+  "dependencies": {
+    "diff": "^9.0.0",
+    "mammoth": "^1.13.0",
+    "pdfjs-dist": "^6.3.289"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.1",
+    "@types/node": "^26.6.3",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.1",
+    "vitest": "^5.0.3"
+  },
+  "private": true,
+  "type": "module"
+}
