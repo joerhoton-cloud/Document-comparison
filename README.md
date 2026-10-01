@@ -71,9 +71,11 @@ npm run build        # dist/ (web app) + dist-server/ (API server)
 
 ## Deploying
 
+**Quick start:** [DEPLOY.md](DEPLOY.md) walks through a one-click Render deployment with billing off and Gmail for email, in about 15 minutes.
+
 Configuration is by environment variables; [`.env.example`](.env.example) documents each one.
 
-**Managed hosting (recommended to start).** [`render.yaml`](render.yaml) is a one-click Render blueprint: the Docker web service plus a managed Postgres, about $20–30/month to start. The same image runs on Fly.io, Railway, Azure Container Apps or AWS App Runner with any managed Postgres (Neon, Supabase, RDS).
+**Managed hosting (recommended to start).** [`render.yaml`](render.yaml) is a one-click Render blueprint: the Docker web service plus a private managed Postgres, about $13/month to start. The same image runs on Fly.io, Railway, Azure Container Apps or AWS App Runner with any managed Postgres (Neon, Supabase, RDS).
 
 **Self-hosted.** `cp .env.example .env`, fill it in, then run `docker compose up -d`. This runs the app on port 3000 plus Postgres. Put it behind your TLS terminator.
 
@@ -82,7 +84,7 @@ The server creates and updates its tables on start (additive changes only). Heal
 ### Launch checklist
 
 1. **Domain and HTTPS.** Set `BASE_URL` to the public URL.
-2. **Email.** Create a [Resend](https://resend.com) account, verify your sending domain, then set `RESEND_API_KEY` and `EMAIL_FROM`.
+2. **Email.** Either set `SMTP_URL` to any SMTP server (Gmail with an app password works for testing), or create a [Resend](https://resend.com) account, verify your sending domain, and set `RESEND_API_KEY`. Set `EMAIL_FROM` in both cases.
 3. **Stripe.**
    - Build and test in a **Stripe sandbox**, then repeat the setup in live mode.
    - Run `STRIPE_SECRET_KEY=sk_test_… npm run stripe:setup`. It creates the "DocCompare Team" ($49/month) and "DocCompare Unlimited" ($100/month) products and prices; override the amounts with `-- --team 49 --unlimited 100`. It also configures the customer portal and, when `BASE_URL` is a public https URL, the webhook. It prints the `STRIPE_PRICE_TEAM` / `STRIPE_PRICE_UNLIMITED` values to set, and is safe to re-run.

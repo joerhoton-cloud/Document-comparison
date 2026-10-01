@@ -11,7 +11,8 @@ export const env = {
   isProd,
   port: Number(process.env.PORT ?? 3000),
   /** Public URL of the app, e.g. https://compare.example.com (no trailing slash). */
-  baseUrl: required('BASE_URL', isProd ? undefined : 'http://localhost:3000').replace(/\/$/, ''),
+  // Render sets RENDER_EXTERNAL_URL automatically, so BASE_URL can be left unset there.
+  baseUrl: required('BASE_URL', process.env.RENDER_EXTERNAL_URL ?? (isProd ? undefined : 'http://localhost:3000')).replace(/\/$/, ''),
   databaseUrl: required('DATABASE_URL', isProd ? undefined : 'postgres://postgres@localhost:5433/doccompare'),
   authSecret: required('BETTER_AUTH_SECRET', isProd ? undefined : 'dev-only-secret-change-me-dev-only-secret'),
   appName: process.env.APP_NAME ?? 'DocCompare',
@@ -40,6 +41,11 @@ export const env = {
 
   /** Transactional email via Resend. Without it, emails are printed to the server log (dev only). */
   resendApiKey: process.env.RESEND_API_KEY,
+  /**
+   * Or any SMTP server, e.g. Gmail with an app password:
+   * smtps://you%40gmail.com:APP_PASSWORD@smtp.gmail.com:465
+   */
+  smtpUrl: process.env.SMTP_URL,
   emailFrom: process.env.EMAIL_FROM ?? 'DocCompare <no-reply@example.com>',
 
   stripe: process.env.STRIPE_SECRET_KEY
@@ -67,6 +73,7 @@ if (env.stripe && /^[sr]k_live_/.test(env.stripe.secretKey) && !isProd)
 if (isProd && env.stripe && /^sk_/.test(env.stripe.secretKey))
   console.warn('[stripe] Using an unrestricted secret key. Create a restricted key (rk_) with only the needed permissions.');
 
-if (isProd && !env.resendApiKey) throw new Error('RESEND_API_KEY is required in production to send sign-in and invitation emails.');
+if (isProd && !env.resendApiKey && !env.smtpUrl)
+  throw new Error('Set RESEND_API_KEY or SMTP_URL: production needs email for sign-in links, confirmations and invitations.');
 if (isProd && !env.stripe && process.env.BILLING_DISABLED !== 'true')
   throw new Error('Stripe is not configured. Set STRIPE_* variables, or BILLING_DISABLED=true to run without billing.');

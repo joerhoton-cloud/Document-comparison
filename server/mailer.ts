@@ -1,3 +1,4 @@
+import { createTransport, type Transporter } from 'nodemailer';
 import { env } from './env';
 
 export interface Email {
@@ -13,8 +14,10 @@ const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
 /** Emails sent in development, for tests and local inspection. */
 export const devOutbox: Email[] = [];
 
+let smtp: Transporter | undefined;
+
 export async function sendEmail(mail: Email): Promise<void> {
-  if (!env.resendApiKey) {
+  if (!env.resendApiKey && !env.smtpUrl) {
     devOutbox.push(mail);
     if (devOutbox.length > 50) devOutbox.shift();
     console.info(`[email] to=${mail.to} subject="${mail.subject}"${mail.action ? ` link=${mail.action.url}` : ''}`);
@@ -24,6 +27,12 @@ export async function sendEmail(mail: Email): Promise<void> {
 <p>${esc(mail.text).replace(/\n/g, '<br>')}</p>
 ${mail.action ? `<p><a href="${esc(mail.action.url)}" style="display:inline-block;background:#2f5bea;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:600">${esc(mail.action.label)}</a></p><p style="color:#5a6376;font-size:13px">Or paste this link into your browser:<br>${esc(mail.action.url)}</p>` : ''}
 </div>`;
+  const text = mail.text + (mail.action ? `\n\n${mail.action.label}: ${mail.action.url}` : '');
+  if (env.smtpUrl) {
+    smtp ??= createTransport(env.smtpUrl);
+    await smtp.sendMail({ from: env.emailFrom, to: mail.to, subject: mail.subject, text, html });
+    return;
+  }
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: { Authorization: `Bearer ${env.resendApiKey}`, 'Content-Type': 'application/json' },
@@ -31,7 +40,7 @@ ${mail.action ? `<p><a href="${esc(mail.action.url)}" style="display:inline-bloc
       from: env.emailFrom,
       to: mail.to,
       subject: mail.subject,
-      text: mail.text + (mail.action ? `\n\n${mail.action.label}: ${mail.action.url}` : ''),
+      text,
       html,
     }),
   });
