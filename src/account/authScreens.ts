@@ -161,7 +161,7 @@ export function renderSignIn(root: HTMLElement, config: PublicConfig, done: () =
     if (!email.value.includes('@') || !password.value) return notice(msg, 'Enter your email and password.');
     const res = await busy(form, () => call<{ twoFactorRedirect?: boolean }>('/api/auth/sign-in/email', { json: { email: email.value.trim(), password: password.value } }));
     if (!res.ok) {
-      if (res.status === 403) return notice(msg, 'Confirm your email first. We sent you a link when you signed up.');
+      if (res.status === 403) return notice(msg, `Your email isn't confirmed yet. We've just sent a new confirmation link to ${email.value.trim()}. Check your spam folder too.`, 'info');
       if (res.status === 401) return notice(msg, 'That email and password don’t match.');
       return notice(msg, res.message);
     }

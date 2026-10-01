@@ -128,6 +128,8 @@ const options = {
   },
   emailVerification: {
     sendOnSignUp: true,
+    // Trying to sign in with an unconfirmed address sends a fresh confirmation link.
+    sendOnSignIn: true,
     autoSignInAfterVerification: true,
     async sendVerificationEmail({ user, url }) {
       await sendEmail({

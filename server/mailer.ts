@@ -16,7 +16,7 @@ export const devOutbox: Email[] = [];
 
 let smtp: Transporter | undefined;
 
-export async function sendEmail(mail: Email): Promise<void> {
+async function deliver(mail: Email): Promise<void> {
   if (!env.resendApiKey && !env.smtpUrl) {
     devOutbox.push(mail);
     if (devOutbox.length > 50) devOutbox.shift();
@@ -45,4 +45,42 @@ ${mail.action ? `<p><a href="${esc(mail.action.url)}" style="display:inline-bloc
     }),
   });
   if (!res.ok) throw new Error(`Email delivery failed (${res.status})`);
+}
+
+/** Send an email, logging failures (without credentials) so they show up in the host's logs. */
+export async function sendEmail(mail: Email): Promise<void> {
+  try {
+    await deliver(mail);
+    if (env.smtpUrl || env.resendApiKey) console.info(`[email] sent "${mail.subject}" to ${mail.to}`);
+  } catch (err) {
+    console.error(`[email] FAILED to send "${mail.subject}" to ${mail.to}: ${(err as Error).message}`);
+    throw err;
+  }
+}
+
+/** Check the SMTP login at startup so a bad password shows up in the logs immediately. */
+export async function checkEmailSetup(): Promise<void> {
+  if (!env.smtpUrl) return;
+  let host = 'SMTP server';
+  let user = '';
+  try {
+    const u = new URL(env.smtpUrl);
+    host = u.hostname;
+    user = decodeURIComponent(u.username);
+    if (u.username.includes('@')) console.warn('[email] SMTP_URL: write the @ in the username as %40, e.g. you%40gmail.com');
+  } catch {
+    console.error('[email] SMTP_URL is not a valid URL. Expected smtps://you%40gmail.com:APP_PASSWORD@smtp.gmail.com:465');
+    return;
+  }
+  try {
+    smtp ??= createTransport(env.smtpUrl);
+    await smtp.verify();
+    console.info(`[email] SMTP login OK (${user} @ ${host})`);
+  } catch (err) {
+    const msg = (err as Error).message;
+    const hint = /535|Username and Password not accepted|Invalid login/i.test(msg)
+      ? ' Gmail rejected the login: check the app password (16 letters, no spaces) and that the address is written you%40gmail.com.'
+      : '';
+    console.error(`[email] SMTP login FAILED for ${user} @ ${host}: ${msg}.${hint}`);
+  }
 }
