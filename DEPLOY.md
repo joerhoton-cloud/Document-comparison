@@ -13,10 +13,11 @@ way to send them is through a Gmail account.
 2. Turn on 2-Step Verification if it isn't already: <https://myaccount.google.com/security>.
 3. Open <https://myaccount.google.com/apppasswords>, create an app password named
    "DocCompare", and copy the 16-character password (no spaces).
-4. Build your two settings. Replace `you` and the password, and write `@` as `%40`:
+4. Your three settings:
 
    ```
-   SMTP_URL   = smtps://you%40gmail.com:abcdefghijklmnop@smtp.gmail.com:465
+   SMTP_USER  = you@gmail.com
+   SMTP_PASS  = the 16-letter app password (spaces are fine)
    EMAIL_FROM = DocCompare <you@gmail.com>
    ```
 
@@ -33,7 +34,7 @@ launch, switch to Resend with your own domain (see `.env.example`).
    (Or: Render Dashboard → **New** → **Blueprint** → pick `Document-comparison` and the
    `claude/document-comparison-tool-hmfnz0` branch.)
 3. Render reads `render.yaml` and shows a web service `doccompare` and a database
-   `doccompare-db`. Paste the `SMTP_URL` and `EMAIL_FROM` values from step 1, then click
+   `doccompare-db`. Paste the `SMTP_USER`, `SMTP_PASS` and `EMAIL_FROM` values from step 1, then click
    **Deploy Blueprint**.
 4. The first build takes about 5 minutes. When the service shows **Live**, open its
    `https://doccompare-xxxx.onrender.com` address.
@@ -61,8 +62,8 @@ fingerprints and review marks are saved, and only when someone chooses to save.
 
 | Symptom | Fix |
 |---|---|
-| Deploy fails with `Set RESEND_API_KEY or SMTP_URL` | Add `SMTP_URL` and `EMAIL_FROM` under the service's **Environment** tab, then **Manual Deploy**. |
-| No confirmation email arrives | Check spam. In the service **Logs**, look for an email error: usually a wrong app password, or `@` not written as `%40` in `SMTP_URL`. |
+| Deploy fails with `Set RESEND_API_KEY or SMTP_URL` or an `SMTP_` setting error | Add `SMTP_USER`, `SMTP_PASS` and `EMAIL_FROM` under the service's **Environment** tab, then **Manual Deploy**. |
+| No confirmation email arrives | Check spam. In the service **Logs**, find the `[email] SMTP login …` line after startup. `FAILED` means the app password is wrong: create a new one and update `SMTP_PASS`. Then sign in again to get a fresh link. |
 | "Too many requests" when signing up | Sign-ups are limited to 5 per minute per address, as a security measure. Wait a minute. |
 | You want your own domain | Service → **Settings** → **Custom Domains**, add e.g. `compare.yourcompany.com`, create the DNS record Render shows, then set `BASE_URL=https://compare.yourcompany.com` under **Environment**. |
 

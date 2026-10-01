@@ -2,7 +2,7 @@
 # the app as a Docker web service plus a managed Postgres database.
 #
 # Render → New → Blueprint → pick this repository and branch. You'll be asked for
-# SMTP_URL and EMAIL_FROM (see .env.example). The public URL is detected automatically.
+# SMTP_USER, SMTP_PASS and EMAIL_FROM (see DEPLOY.md). The public URL is detected automatically.
 #
 # This starts with billing turned off, for testing. To charge customers later, remove
 # BILLING_DISABLED and add STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, STRIPE_PRICE_TEAM
@@ -24,8 +24,10 @@ services:
         generateValue: true
       - key: BILLING_DISABLED
         value: 'true'
-      # Email for sign-in links, confirmations and invitations (Gmail app password or any SMTP).
-      - key: SMTP_URL
+      # Email for sign-in links, confirmations and invitations: a Gmail address and its app password.
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
         sync: false
       - key: EMAIL_FROM
         sync: false

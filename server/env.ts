@@ -34,7 +34,12 @@ export const env = {
    * Header carrying the real client IP, set by your load balancer (used for rate limiting).
    * Only trust it when the app is reachable exclusively through that proxy.
    */
-  clientIpHeader: process.env.CLIENT_IP_HEADER ?? 'x-forwarded-for',
+  // On Render (which sets RENDER=true) traffic passes through Cloudflare, which sets
+  // CF-Connecting-IP to the visitor's address; X-Forwarded-For there has several hops.
+  clientIpHeaders: (process.env.CLIENT_IP_HEADER ?? (process.env.RENDER ? 'cf-connecting-ip,true-client-ip,x-forwarded-for' : 'x-forwarded-for'))
+    .split(',')
+    .map((h) => h.trim().toLowerCase())
+    .filter(Boolean),
 
   /** Automated tests create many accounts from one address; never honoured in production. */
   disableRateLimit: !isProd && process.env.DISABLE_RATE_LIMIT === 'true',
@@ -45,7 +50,7 @@ export const env = {
    * Or any SMTP server, e.g. Gmail with an app password:
    * smtps://you%40gmail.com:APP_PASSWORD@smtp.gmail.com:465
    */
-  smtpUrl: process.env.SMTP_URL,
+  smtp: smtpConfig(),
   emailFrom: process.env.EMAIL_FROM ?? 'DocCompare <no-reply@example.com>',
 
   stripe: process.env.STRIPE_SECRET_KEY
@@ -73,7 +78,43 @@ if (env.stripe && /^[sr]k_live_/.test(env.stripe.secretKey) && !isProd)
 if (isProd && env.stripe && /^sk_/.test(env.stripe.secretKey))
   console.warn('[stripe] Using an unrestricted secret key. Create a restricted key (rk_) with only the needed permissions.');
 
-if (isProd && !env.resendApiKey && !env.smtpUrl)
+if (isProd && !env.resendApiKey && !env.smtp)
   throw new Error('Set RESEND_API_KEY or SMTP_URL: production needs email for sign-in links, confirmations and invitations.');
 if (isProd && !env.stripe && process.env.BILLING_DISABLED !== 'true')
   throw new Error('Stripe is not configured. Set STRIPE_* variables, or BILLING_DISABLED=true to run without billing.');
+
+/**
+ * SMTP settings, from either SMTP_USER + SMTP_PASS (host defaults to Gmail) or SMTP_URL.
+ * Invalid values are reported without echoing them, since they contain a password.
+ */
+function smtpConfig() {
+  const user = process.env.SMTP_USER?.trim();
+  const pass = process.env.SMTP_PASS?.replace(/\s+/g, ''); // Gmail shows app passwords in groups of 4
+  if (user || pass) {
+    if (!user || !pass) throw new Error('Set both SMTP_USER (your email address) and SMTP_PASS (its app password).');
+    if (!user.includes('@')) throw new Error('SMTP_USER must be a full email address, e.g. you@gmail.com.');
+    const port = Number(process.env.SMTP_PORT ?? 465);
+    return { host: process.env.SMTP_HOST ?? 'smtp.gmail.com', port, secure: port === 465, user, pass };
+  }
+  const raw = process.env.SMTP_URL?.trim();
+  if (!raw) return undefined;
+  let u: URL;
+  try {
+    u = new URL(raw);
+  } catch {
+    u = new URL('invalid:');
+  }
+  if (u.protocol !== 'smtp:' && u.protocol !== 'smtps:' || !u.hostname || !u.username || !u.password)
+    throw new Error(
+      'SMTP_URL is not in the expected format (smtps://you%40gmail.com:APP_PASSWORD@smtp.gmail.com:465). ' +
+        'Simpler: delete SMTP_URL and set SMTP_USER and SMTP_PASS instead.',
+    );
+  const port = Number(u.port || (u.protocol === 'smtps:' ? 465 : 587));
+  return {
+    host: u.hostname,
+    port,
+    secure: u.protocol === 'smtps:',
+    user: decodeURIComponent(u.username),
+    pass: decodeURIComponent(u.password).replace(/\s+/g, ''),
+  };
+}

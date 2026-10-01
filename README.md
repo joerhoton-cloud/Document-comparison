@@ -84,7 +84,7 @@ The server creates and updates its tables on start (additive changes only). Heal
 ### Launch checklist
 
 1. **Domain and HTTPS.** Set `BASE_URL` to the public URL.
-2. **Email.** Either set `SMTP_URL` to any SMTP server (Gmail with an app password works for testing), or create a [Resend](https://resend.com) account, verify your sending domain, and set `RESEND_API_KEY`. Set `EMAIL_FROM` in both cases.
+2. **Email.** Either set `SMTP_USER` and `SMTP_PASS` (a Gmail address and app password works for testing; set `SMTP_HOST` for other servers), or create a [Resend](https://resend.com) account, verify your sending domain, and set `RESEND_API_KEY`. Set `EMAIL_FROM` in both cases.
 3. **Stripe.**
    - Build and test in a **Stripe sandbox**, then repeat the setup in live mode.
    - Run `STRIPE_SECRET_KEY=sk_test_… npm run stripe:setup`. It creates the "DocCompare Team" ($49/month) and "DocCompare Unlimited" ($100/month) products and prices; override the amounts with `-- --team 49 --unlimited 100`. It also configures the customer portal and, when `BASE_URL` is a public https URL, the webhook. It prints the `STRIPE_PRICE_TEAM` / `STRIPE_PRICE_UNLIMITED` values to set, and is safe to re-run.

@@ -167,7 +167,7 @@ const options = {
   advanced: {
     useSecureCookies: env.isProd,
     cookiePrefix: 'doccompare',
-    ipAddress: { ipAddressHeaders: [env.clientIpHeader] },
+    ipAddress: { ipAddressHeaders: env.clientIpHeaders },
     // The server migrates the schema itself on start (server/migrate.ts), so skip the startup check.
     database: { validateSchema: false },
   },

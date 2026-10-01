@@ -17,7 +17,7 @@ export const devOutbox: Email[] = [];
 let smtp: Transporter | undefined;
 
 async function deliver(mail: Email): Promise<void> {
-  if (!env.resendApiKey && !env.smtpUrl) {
+  if (!env.resendApiKey && !env.smtp) {
     devOutbox.push(mail);
     if (devOutbox.length > 50) devOutbox.shift();
     console.info(`[email] to=${mail.to} subject="${mail.subject}"${mail.action ? ` link=${mail.action.url}` : ''}`);
@@ -28,8 +28,8 @@ async function deliver(mail: Email): Promise<void> {
 ${mail.action ? `<p><a href="${esc(mail.action.url)}" style="display:inline-block;background:#2f5bea;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:600">${esc(mail.action.label)}</a></p><p style="color:#5a6376;font-size:13px">Or paste this link into your browser:<br>${esc(mail.action.url)}</p>` : ''}
 </div>`;
   const text = mail.text + (mail.action ? `\n\n${mail.action.label}: ${mail.action.url}` : '');
-  if (env.smtpUrl) {
-    smtp ??= createTransport(env.smtpUrl);
+  if (env.smtp) {
+    smtp ??= transport();
     await smtp.sendMail({ from: env.emailFrom, to: mail.to, subject: mail.subject, text, html });
     return;
   }
@@ -51,35 +51,41 @@ ${mail.action ? `<p><a href="${esc(mail.action.url)}" style="display:inline-bloc
 export async function sendEmail(mail: Email): Promise<void> {
   try {
     await deliver(mail);
-    if (env.smtpUrl || env.resendApiKey) console.info(`[email] sent "${mail.subject}" to ${mail.to}`);
+    if (env.smtp || env.resendApiKey) console.info(`[email] sent "${mail.subject}" to ${mail.to}`);
   } catch (err) {
-    console.error(`[email] FAILED to send "${mail.subject}" to ${mail.to}: ${(err as Error).message}`);
-    throw err;
+    const reason = redact((err as Error).message);
+    console.error(`[email] FAILED to send "${mail.subject}" to ${mail.to}: ${reason}`);
+    // Rethrow a sanitized error: callers (and their loggers) never see credentials.
+    throw new Error(`Email delivery failed: ${reason}`);
   }
+}
+
+function transport(): Transporter {
+  const c = env.smtp!;
+  return createTransport({ host: c.host, port: c.port, secure: c.secure, auth: { user: c.user, pass: c.pass } });
+}
+
+/** Remove secrets from text that may be logged. */
+function redact(text: string): string {
+  let out = text;
+  for (const secret of [env.smtp?.pass, process.env.SMTP_PASS, process.env.SMTP_URL, env.resendApiKey]) {
+    if (secret && secret.length >= 4) out = out.split(secret).join('[redacted]');
+  }
+  return out;
 }
 
 /** Check the SMTP login at startup so a bad password shows up in the logs immediately. */
 export async function checkEmailSetup(): Promise<void> {
-  if (!env.smtpUrl) return;
-  let host = 'SMTP server';
-  let user = '';
+  if (!env.smtp) return;
+  const { user, host } = env.smtp;
   try {
-    const u = new URL(env.smtpUrl);
-    host = u.hostname;
-    user = decodeURIComponent(u.username);
-    if (u.username.includes('@')) console.warn('[email] SMTP_URL: write the @ in the username as %40, e.g. you%40gmail.com');
-  } catch {
-    console.error('[email] SMTP_URL is not a valid URL. Expected smtps://you%40gmail.com:APP_PASSWORD@smtp.gmail.com:465');
-    return;
-  }
-  try {
-    smtp ??= createTransport(env.smtpUrl);
+    smtp ??= transport();
     await smtp.verify();
     console.info(`[email] SMTP login OK (${user} @ ${host})`);
   } catch (err) {
-    const msg = (err as Error).message;
+    const msg = redact((err as Error).message);
     const hint = /535|Username and Password not accepted|Invalid login/i.test(msg)
-      ? ' Gmail rejected the login: check the app password (16 letters, no spaces) and that the address is written you%40gmail.com.'
+      ? ' The server rejected the login: check SMTP_PASS (for Gmail, a 16-letter app password from myaccount.google.com/apppasswords).'
       : '';
     console.error(`[email] SMTP login FAILED for ${user} @ ${host}: ${msg}.${hint}`);
   }
