@@ -12,9 +12,7 @@ services:
     name: doccompare
     runtime: docker
     plan: starter
-    region: oregon
     healthCheckPath: /healthz
-    autoDeploy: true
     envVars:
       - key: NODE_ENV
         value: production
@@ -34,6 +32,5 @@ services:
 databases:
   - name: doccompare-db
     plan: basic-256mb
-    region: oregon
-    postgresMajorVersion: '16'
+    # No outside connections: only services in this Render account can reach the database.
     ipAllowList: []
