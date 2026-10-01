@@ -8,10 +8,12 @@ export interface Block {
 
 export interface ExtractedDoc {
   name: string;
-  format: 'pdf' | 'docx' | 'text' | 'html';
+  format: 'pdf' | 'docx' | 'text' | 'html' | 'image';
   size: number;
   blocks: Block[];
   pageCount?: number;
+  /** Pages whose text came from OCR (scans); recognised text may contain errors. */
+  ocrPages?: number;
 }
 
 export interface CompareOptions {

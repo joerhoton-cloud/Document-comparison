@@ -26,7 +26,8 @@ There is no upload endpoint. API request bodies are capped at 64 KB, and there i
 | Risk | Control |
 |---|---|
 | Document exfiltration by the page | CSP `default-src 'self'; connect-src 'self'`, with no third-party origins. This is enforced by the browser and verified in e2e tests, which record every network request. |
-| Malicious PDF | Patched PDF.js (≥ 6.2.108). Runs in a Web Worker, extracts text only (no rendering), with XFA and font-face loading disabled. |
+| Malicious PDF | Patched PDF.js (≥ 6.2.108; legacy build for older browsers). Runs in a Web Worker, with XFA and font-face loading disabled. Only pages without a text layer are rendered, to an off-screen canvas for OCR. |
+| Scans and OCR | Text recognition (Tesseract WebAssembly) runs in a Web Worker in the browser, from files served by this origin. Scanned pages are never uploaded. The English model is cached in the browser's storage; it contains no document data. |
 | Malicious DOCX/HTML | Converted to an inert DOM via `DOMParser`, where scripts never execute. Only `textContent` is read. Images are dropped. |
 | XSS through document text | All document text goes into the page with `textContent` or text nodes. The UI has no `innerHTML`. The exported report HTML-escapes all content and carries its own `default-src 'none'` CSP. |
 | CSV formula injection | Cells beginning with `= + - @` are prefixed with `'`. |
@@ -38,7 +39,7 @@ There is no upload endpoint. API request bodies are capped at 64 KB, and there i
 | CSRF | Session cookies are `SameSite=Lax`, and all non-GET API requests must carry this app's exact `Origin`. |
 | Billing abuse | Only owners/admins can start or change subscriptions (`authorizeReference`). Stripe webhooks are signature-verified, and access follows the webhook-synced subscription status, never the checkout return page. Workspaces without an active or trial subscription get `402` from every workspace API. |
 | Stripe key exposure | A restricted key (`rk_`) with least-privilege permissions is recommended. A live key is refused outside production. A pre-commit hook blocks commits containing Stripe keys, webhook secrets or `.env` files. |
-| Supply chain | Browser code uses four libraries (`pdfjs-dist`, `mammoth`, `diff`, `qrcode-generator`). The server uses `better-auth`, `hono`, `pg`/`kysely`, `stripe` and `zod`. Versions are pinned in a lockfile, and CI runs `npm audit --audit-level=high`. |
+| Supply chain | Browser code uses five libraries (`pdfjs-dist`, `mammoth`, `diff`, `qrcode-generator`, `tesseract.js`). The server uses `better-auth`, `hono`, `pg`/`kysely`, `stripe` and `zod`. Versions are pinned in a lockfile, and CI runs `npm audit --audit-level=high`. |
 
 ## Access control
 

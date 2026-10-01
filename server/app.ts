@@ -13,7 +13,8 @@ import { env } from './env';
 /** Same policy as the static build: the page may only talk to this server. */
 const CSP = [
   "default-src 'self'",
-  "script-src 'self'",
+  // 'wasm-unsafe-eval' allows WebAssembly only (the in-browser OCR engine); JavaScript eval stays blocked.
+  "script-src 'self' 'wasm-unsafe-eval'",
   "worker-src 'self' blob:",
   "style-src 'self'",
   "img-src 'self' data: blob:",

@@ -202,7 +202,7 @@ function renderSetup() {
       'section',
       { class: 'hero' },
       h('h1', null, 'Compare two versions of a document'),
-      h('p', null, 'Drop in an original and a revised file (PDF, Word, HTML or text, in any combination). Differences are highlighted side by side.'),
+      h('p', null, 'Drop in an original and a revised file (PDF, scanned PDF, Word, image or text, in any combination). Differences are highlighted side by side.'),
     ),
     h(
       'section',
@@ -371,7 +371,7 @@ function slotCard(side: Side): HTMLElement {
           { class: 'slot-empty' },
           icon('upload', 28),
           h('span', null, h('strong', null, 'Choose a file'), ' or drag it here'),
-          h('span', { class: 'slot-meta' }, 'PDF · DOCX · HTML · TXT'),
+          h('span', { class: 'slot-meta' }, 'PDF (incl. scans) · DOCX · Image · TXT'),
         ),
   );
 

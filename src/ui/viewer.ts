@@ -276,6 +276,12 @@ export class Viewer {
           { class: 'col-meta' },
           [d.format.toUpperCase(), formatBytes(d.size), d.pageCount ? plural(d.pageCount, 'page') : plural(d.blocks.length, 'paragraph')].join(' · '),
         ),
+        d.ocrPages &&
+          h(
+            'span',
+            { class: 'ocr-note', title: 'Text on scanned pages was recognized on your device (OCR). Recognition can misread characters, so double-check flagged differences against the original.' },
+            d.format === 'image' ? 'Scanned image: text recognized (OCR)' : `${plural(d.ocrPages, 'scanned page')}: text recognized (OCR)`,
+          ),
       );
     clear(this.headsEl);
     this.headsEl.append(head('Original', left, 'left'), head('Revised', right, 'right'));

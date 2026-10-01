@@ -65,7 +65,7 @@ const fileSchema = z.object({
   name: z.string().min(1).max(255),
   sha256: z.string().regex(/^[0-9a-f]{64}$/),
   size: z.number().int().nonnegative().max(10 * 1024 * 1024 * 1024),
-  format: z.enum(['pdf', 'docx', 'text', 'html']),
+  format: z.enum(['pdf', 'docx', 'text', 'html', 'image']),
 });
 const optionsSchema = z.object({
   ignoreCase: z.boolean(),

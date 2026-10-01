@@ -8,7 +8,8 @@ A subscription web app for comparing two versions of a document, modeled on the 
 
 | | |
 |---|---|
-| **Formats** | PDF (text-based), Word `.docx`, HTML, plain text/Markdown. Any combination, e.g. PDF vs Word. |
+| **Formats** | PDF (digital or scanned), Word `.docx`, images of pages (PNG, JPG, WebP), HTML, plain text/Markdown. Any combination, e.g. a scanned PDF vs a Word file. |
+| **OCR for scans** | Pages without a text layer (scans, photocopies, faxes) and images are read with built-in text recognition (Tesseract, compiled to WebAssembly). It runs in the browser like everything else, so scans are never uploaded. Recognized pages are labelled, because OCR can misread characters. |
 | **Side-by-side view** | Original and revised are shown in aligned rows. Changed paragraphs line up; added and removed paragraphs sit next to a hatched gap. |
 | **Highlighting** | Removed text is red with strikethrough, added text is green, and changed paragraphs get an amber margin bar. Highlighting can be word-level or character-level. |
 | **List of differences** | Every change is listed with its type (Changed / Added / Removed), page number and surrounding context. Click an item to jump to it. |
@@ -30,12 +31,12 @@ A subscription web app for comparing two versions of a document, modeled on the 
 | **No duplicate work** | When two files are selected, their fingerprints are checked against the workspace history. If a teammate already compared them (in either order), a banner offers to continue their review. |
 | **History** | A list of saved comparisons with who, when and review progress, plus a team activity feed (compared, reopened, reviewed, flagged, deleted). To reopen one, you select the same files again; the app verifies they match the fingerprints. |
 
-Not included yet: OCR for scanned PDFs (the app detects them and asks for an OCR'd copy), legacy `.doc` files, and formatting-only changes such as bold or font.
+Not included yet: languages other than English for OCR, legacy `.doc` files, and formatting-only changes such as bold or font.
 
 ## Security model
 
 - **Documents stay client-side.** PDF parsing (PDF.js), Word parsing (mammoth) and the diff all run in the browser tab. The API accepts only small JSON bodies (64 KB limit) of metadata, and the e2e tests verify that no request ever contains document text.
-- **No outbound connections.** A strict Content-Security-Policy (`connect-src 'self'`, no third-party scripts, fonts or CDNs) makes it technically impossible for the page to send document content elsewhere. PDF.js workers, fonts and character maps are bundled and served from the same origin.
+- **No outbound connections.** A strict Content-Security-Policy (`connect-src 'self'`, no third-party scripts, fonts or CDNs) makes it technically impossible for the page to send document content elsewhere. PDF.js workers, fonts, character maps and image decoders, and the OCR engine and its English model, are bundled and served from the same origin. `script-src` allows `'wasm-unsafe-eval'` for the WebAssembly OCR engine only; JavaScript `eval` stays blocked.
 - **No document persistence.** Documents are held in memory only. Clicking "New" drops them. Saving (off by default) stores metadata, fingerprints and review marks. Review marks are keyed by a hash of each change, not its text. Notes are the only free text, and people write those themselves.
 - **Accounts.** [Better Auth](https://www.better-auth.com) handles passwords, sessions, email verification, 2FA, OAuth, rate limiting and organization roles. Every API query is scoped to the caller's workspace, and tests check that one workspace can't read or change another's data.
 - **CSRF.** Every state-changing request must carry this app's own `Origin`.

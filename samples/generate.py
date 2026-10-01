@@ -1,6 +1,6 @@
-"""Generate sample original/revised contracts (DOCX, PDF, TXT) for trying the app.
+"""Generate sample original/revised contracts (DOCX, PDF, TXT, scanned PDF) for trying the app.
 
-Requires: pip install python-docx reportlab
+Requires: pip install python-docx reportlab pillow
 Run from this folder: python3 generate.py
 """
 from docx import Document
@@ -69,10 +69,54 @@ def make_pdf(items, path):
     doc.build(story)
 
 
+def make_scanned_pdf(items, path, dpi=200):
+    """An image-only PDF (no text layer), like a photocopier scan: slight tilt and speckle."""
+    import random
+    import textwrap
+    from PIL import Image, ImageDraw, ImageFont
+
+    random.seed(7)
+    w, h = int(8.5 * dpi), int(11 * dpi)
+    margin = int(1 * dpi)
+    body = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf", int(dpi * 0.15))
+    head = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf", int(dpi * 0.19))
+    pages, page, y = [], None, h
+    def new_page():
+        nonlocal page, y
+        page = Image.new("L", (w, h), 250)
+        pages.append(page)
+        y = margin
+    for kind, text in items:
+        font = head if kind == "h" else body
+        lines = textwrap.wrap(text, 70 if kind == "p" else 60)
+        line_h = int(font.size * 1.45)
+        if y + line_h * len(lines) > h - margin:
+            new_page()
+        if page is None:
+            new_page()
+        draw = ImageDraw.Draw(page)
+        for line in lines:
+            draw.text((margin, y), line, font=font, fill=25)
+            y += line_h
+        y += int(font.size * 0.9)
+    out = []
+    for pg in pages:
+        px = pg.load()
+        for _ in range(1500):  # scanner speckle
+            px[random.randrange(w), random.randrange(h)] = random.randrange(80, 200)
+        out.append(pg.rotate(0.4, fillcolor=250, resample=Image.BICUBIC).convert("RGB"))
+    if path.endswith(".png"):
+        out[0].save(path)  # first page only, like a phone photo of one page
+    else:
+        out[0].save(path, save_all=True, append_images=out[1:], resolution=dpi)
+
+
 if __name__ == "__main__":
     make_docx(ORIGINAL, "contract-original.docx")
     make_docx(REVISED, "contract-revised.docx")
     make_pdf(ORIGINAL, "contract-original.pdf")
     make_pdf(REVISED, "contract-revised.pdf")
+    make_scanned_pdf(ORIGINAL, "contract-original-scanned.pdf")
+    make_scanned_pdf(REVISED, "contract-revised-page1.png")
     with open("contract-original.txt", "w") as f:
         f.write("\n\n".join(t for _, t in ORIGINAL) + "\n")

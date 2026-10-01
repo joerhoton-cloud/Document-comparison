@@ -1,6 +1,7 @@
 node_modules/
 dist/
 public/pdfjs/
+public/ocr/
 test-results/
 playwright-report/
 *.log
